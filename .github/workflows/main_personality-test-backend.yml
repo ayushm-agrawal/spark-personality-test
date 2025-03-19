@@ -78,5 +78,5 @@ jobs:
         with:
           app-name: 'personality-test-backend'
           slot-name: 'Production'
-          package: './backend'
+          package: './backend/app'
           
