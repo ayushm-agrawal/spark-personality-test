@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from api import router
+from backend.app.api import router
 
 app = FastAPI(title="Personality Test API")
 

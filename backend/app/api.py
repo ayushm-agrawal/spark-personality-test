@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from services import start_test, submit_response, continue_test, get_results, select_interests
-from models import UserResponse, InterestSelection
+from backend.app.services import start_test, submit_response, continue_test, get_results, select_interests
+from backend.app.models import UserResponse, InterestSelection
 from pydantic import BaseModel
 
 router = APIRouter()

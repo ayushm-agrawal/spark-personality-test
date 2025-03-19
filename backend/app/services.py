@@ -10,8 +10,8 @@ from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
 from azure.core.credentials import AzureKeyCredential
 from fastapi import HTTPException
-from firebase import db
-from models import UserResponse, InterestSelection
+from backend.app.firebase import db
+from backend.app.models import UserResponse, InterestSelection
 
 load_dotenv()
 
