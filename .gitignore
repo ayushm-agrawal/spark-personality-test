@@ -1,0 +1,10 @@
+serviceAccountKey.json
+ptest/
+bin/
+include/
+lib/
+.env
+pyvenv.cfg
+
+__pycache__
+upload_traits.py
