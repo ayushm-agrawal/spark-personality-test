@@ -190,7 +190,8 @@ elif st.session_state["step"] == "results":
     description = result.get("archetype_description",
                              "No description available.")
 
-    st.title(f"🎭 Your Personality Archetype: \n\n{archetype}")
+    st.title(f"🎭 Your Personality Archetype \n\n")
+    st.markdown(f"### {archetype}")
     st.markdown("---")
 
     if isinstance(description, dict):
