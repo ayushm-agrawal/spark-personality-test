@@ -129,14 +129,11 @@ def submit_response(response: UserResponse):
         # Update the score and trait count based on the current question stored in the session
         current_question = session.get("current_question")
         trait = current_question.get("trait") if current_question else None
-        print(f"Scores: {session['scores']}")
 
         if current_question:
             selected_key = response.answer.strip().lower()
 
             if current_question["type"] == "multiple-choice":
-                print(
-                    f"Options Score: {current_question['options'].get(response.answer.strip().lower())['score']}")
                 option = current_question["options"].get(selected_key)
                 if option:
                     session["scores"][trait] += option["score"]
@@ -165,8 +162,6 @@ def submit_response(response: UserResponse):
                     temperature=0.6,
                     model=AZURE_OPENAI_MODEL_NAME
                 )
-
-                print(f"Eval Response: {eval_response}")
 
                 eval_json = json.loads(
                     eval_response.choices[0].message.content.strip())
@@ -280,7 +275,8 @@ def generate_next_question(session_id):
 
         system_prompt = f"""
         **User Profile (Always Reference Clearly):**
-        - **User Interests**: {user_interests}  # array of strings provided by the user at the start.
+        # array of strings provided by the user at the start.
+        - **User Interests**: {user_interests}
         - **Previous User Responses**: {previous_responses}
         - **Current Trait Scores**: {current_trait_scores}
         - **Target Trait**: {target_trait}
@@ -352,32 +348,29 @@ def finalize_test(session_id):
             return {"error": "Invalid session ID"}
 
         scores = session.get("scores", {})
-        print(f"Final Scores: {scores}")
         archetype = determine_archetype(scores)
 
-        output_schema = """
-        {
-            "overview": "<Overview summary>",
-            "team_work_style": "<Team work style description>",
-            "ideal_team_situation": "<Ideal team situation description>",
-            "compatible_archetypes": {"<Compatible Archetype 1>": "<Why?>", "<Compatible Archetype 2>": "<Why?>", "...": "..."}
-        }
-        """
+        output_schema = """{
+    "overview": "<Overview summary>",
+    "team_work_style": "<Team work style description>",
+    "ideal_team_situation": "<Ideal team situation description>",
+    "compatible_archetypes": {"<Compatible Archetype 1>": "<Why?>", "<Compatible Archetype 2>": "<Why?>", "...": "..."}
+}"""
         prompt = f"""
         You are a creative and witty personality archetype expert.
         Given these Big Five scores:
         {json.dumps(scores, indent=2)}
         And the archetype description: {knowledge_base['archetypes'][archetype]['description']},
         generate an engaging, personalized profile with three sections:
-        1. Overview (a fun and long summary with emojis and examples)
-        2. Team Work Style (how you function in a team)
-        3. Ideal Team Situation (the environment where you excel)
+        1. Overview(a fun and long summary with emojis and examples)
+        2. Team Work Style(how you function in a team)
+        3. Ideal Team Situation(the environment where you excel)
         4. Best Archetypes to work with (Who do you work best with)
 
-        ## 🚨 **STRICT JSON RESPONSE FORMAT (MUST MATCH EXACTLY):**
+        # 🚨 **STRICT JSON RESPONSE FORMAT (MUST MATCH EXACTLY):**
         {output_schema}
 
-         **Important Constraints (ALWAYS FOLLOW THESE):**
+         **Important Constraints(ALWAYS FOLLOW THESE): **
         - NEVER include markdown formatting or commentary in your response.
         - ALWAYS output strictly valid JSON exactly as defined by {output_schema}.
         """
@@ -388,19 +381,23 @@ def finalize_test(session_id):
                 UserMessage(
                     content="Return only the JSON object as specified.")
             ],
-            max_tokens=200,
+            max_tokens=1000,
             temperature=0.9,
             top_p=1.0,
             model=AZURE_OPENAI_MODEL_NAME
         )
 
         raw_content = final_response.choices[0].message.content.strip()
+        print(f"Raw Content: {raw_content}")
         logging.debug('Raw GPT finalization response: %s' % raw_content)
 
         try:
             if not raw_content:
                 raise ValueError("Empty finalization response")
-            response_json = json.loads(raw_content)
+            cleaned_json = raw_content.replace(
+                "```json", "").replace("```", "").strip()
+            print(f"Cleaned JSON: {cleaned_json}")
+            response_json = json.loads(cleaned_json)
             required_keys = ["overview", "team_work_style",
                              "ideal_team_situation", "compatible_archetypes"]
             if not all(key in response_json for key in required_keys):
@@ -415,7 +412,9 @@ def finalize_test(session_id):
             logging.error(
                 f"Error in finalizing test: {str(json_err)}. Falling back to default profile.")
             fallback_profile = {
-                "overview": knowledge_base["archetypes"][archetype]["description"],
+                "overview": f"Oops.. seems like there was some parsing error. \
+                    While we fix this, let me tell you something I tell everyone.\n\n \
+                        {knowledge_base['archetypes'][archetype]['description']}",
                 "team_work_style": "You bring creativity and flexibility, thriving in environments that allow exploration and experimentation. You excel at uncovering novel solutions and pushing the boundaries of what's possible.",
                 "ideal_team_situation": "Your talents shine brightest in projects that are innovative, dynamic, and offer opportunities to challenge conventional thinking and explore new ideas.",
                 "compatible_archetypes": "Visionary (shares creativity and openness to new ideas, sparking innovation together), Pragmatist (balances your adventurous spirit with practical planning), Catalyst (energizes collaboration, complementing your adaptability and openness)."
@@ -446,34 +445,23 @@ def determine_archetype(scores):
         criteria = data["criteria"]
         match_score = 0
 
-        print(f"Evaluating archetype: '{archetype}' with criteria: {criteria}")
-
         for trait, level in criteria.items():
             required = level_thresholds[level]
             user_score = scores.get(trait, 0)
 
             if user_score >= required:
                 match_score += (user_score - required) + 1
-                print(
-                    f"✅ '{trait}' matched for '{archetype}'. Score: {match_score}")
+
             else:
                 match_score -= (required - user_score)
-                print(
-                    f"❌ '{trait}' mismatched for '{archetype}'. Score: {match_score}")
-
-        print(f"Total match score for archetype '{archetype}': {match_score}")
 
         if match_score > highest_match_score:
             highest_match_score = match_score
             best_match = archetype
-            print(
-                f"⭐ New best match: '{archetype}' with score {highest_match_score}")
     # If no good match, default to "Explorer"
     if highest_match_score <= 0:
         return "Explorer"
 
-    print(
-        f"Final determined archetype: '{best_match}' with score {highest_match_score}")
     return best_match
 
 
