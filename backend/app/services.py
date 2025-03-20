@@ -26,6 +26,18 @@ client = ChatCompletionsClient(
     credential=AzureKeyCredential(AZURE_OPENAI_API_KEY),
 )
 
+with open("system_prompt.md", "r", encoding="utf-8") as f:
+    system_prompt = f.read()
+
+
+response = client.complete(
+    messages=[SystemMessage(content=system_prompt)],
+    max_tokens=500,
+    temperature=0.8,
+    top_p=1.0,
+    model=AZURE_OPENAI_MODEL_NAME
+)
+
 
 def load_knowledge_base():
     kb_ref = db.collection("knowledge_base").document("big_five_test").get()
@@ -67,6 +79,8 @@ def start_test():
         "scores": {trait: 0 for trait in knowledge_base["traits"]},
         "trait_counts": trait_counts,
         "paused": False,
+        "optional_responses": {},
+        "response_times": {},
         "current_question": None
     }
     db.collection("sessions").document(session_id).set(session_data)
@@ -114,25 +128,63 @@ def submit_response(response: UserResponse):
 
         # Update the score and trait count based on the current question stored in the session
         current_question = session.get("current_question")
-        if current_question and "trait" in current_question:
-            trait = current_question["trait"]
-            # Look up the option score using the answer key (if multiple-choice)
+        trait = current_question.get("trait") if current_question else None
+        print(f"Scores: {session['scores']}")
+
+        if current_question:
             selected_key = response.answer.strip().lower()
-            if current_question.get("type") == "multiple-choice":
+
+            if current_question["type"] == "multiple-choice":
+                print(
+                    f"Options Score: {current_question['options'].get(response.answer.strip().lower())['score']}")
                 option = current_question["options"].get(selected_key)
                 if option:
                     session["scores"][trait] += option["score"]
-            # Update trait counts
-            trait_counts = session.get(
-                "trait_counts", {t: 0 for t in knowledge_base["traits"]})
-            trait_counts[trait] = trait_counts.get(trait, 0) + 1
-            session["trait_counts"] = trait_counts
 
-            # Calculate response time safely
+            elif current_question["type"] == "optional-freeform":
+                # Evaluate freeform response via GPT-4o dynamically
+                eval_prompt = f"""
+                You are evaluating a freeform personality test answer based on the Big Five trait: '{trait}'.
+
+                User's Answer: "{response.answer}"
+
+                Briefly analyze this answer, considering tone, sentiment, and keywords to assign a numeric score (0 to 5):
+                    - 0: Not indicative
+                    - 5: Highly indicative
+
+                Output STRICTLY in this JSON format (no markdown, no commentary):
+                {{"score": <number>, "reason": "<brief explanation>"}}
+                """
+
+                eval_response = client.complete(
+                    messages=[
+                        SystemMessage(content=eval_prompt),
+                        UserMessage(content="Return ONLY the specified JSON.")
+                    ],
+                    max_tokens=100,
+                    temperature=0.6,
+                    model=AZURE_OPENAI_MODEL_NAME
+                )
+
+                print(f"Eval Response: {eval_response}")
+
+                eval_json = json.loads(
+                    eval_response.choices[0].message.content.strip())
+                session["scores"][trait] += eval_json["score"]
+                session["optional_responses"][response.question_id] = eval_json["reason"]
+
+            # Update trait counts
+            session["trait_counts"][trait] += 1
+
+            # Track response time
             current_time = time.time()
             last_time = session.get(
                 "last_question_time", session["start_time"])
             response_time = current_time - last_time
+            session["last_question_time"] = current_time
+
+            session_ref.update(session)
+
             # Only update response_times if a valid question_id exists
             if response.question_id:
                 session["response_times"][response.question_id] = response_time
@@ -183,22 +235,13 @@ def generate_next_question(session_id):
             logging.info("Maximum question count reached. Finalizing test.")
             return finalize_test(session_id)
 
-        trait_counts = session.get(
-            "trait_counts", {t: 0 for t in knowledge_base["traits"]})
-        target_trait = None
-        for trait, count in trait_counts.items():
-            if count < 2:
-                target_trait = trait
-                break
-        if not target_trait:
-            target_trait = min(trait_counts, key=trait_counts.get)
+        trait_counts = session.get("trait_counts", {})
+        trait_needs = {trait: 2 - count for trait,
+                       count in trait_counts.items()}
+        target_trait = max(trait_needs, key=trait_needs.get)
 
         # Limit freeform text questions to 10% probability.
         question_type = "multiple-choice" if random.random() < 0.9 else "optional-freeform"
-
-        extra_context = ""
-        if random.random() < 0.5:
-            extra_context = f"Also, refer to this knowledge base info: {json.dumps(knowledge_base)}"
 
         # Define JSON schema instructions.
         if question_type == "multiple-choice":
@@ -229,19 +272,34 @@ def generate_next_question(session_id):
             }}
             """
 
+        user_interests = json.dumps(session["interests"]),
+        previous_responses = json.dumps(session["responses"]),
+        current_trait_scores = json.dumps(session["scores"]),
+        questions_answered_count = question_count,
+        trait_counts = json.dumps(trait_counts)
+
         system_prompt = f"""
-        You are a creative, witty AI specialized in personality tests using the Big Five framework.
-        The user has answered {question_count} out of 10 questions.
-        Current trait counts: {json.dumps(trait_counts)}
-        Target Trait: {target_trait}
-        User Interests: {json.dumps(session['interests'])}
-        Previous Responses: {json.dumps(session['responses'])}
-        {extra_context}
-        Generate one unique, concise, and personalized question for Question {question_count + 1} of 10.
-        For a multiple-choice question, ensure that the question text does not include any of the option letters or texts.
-        Output must be strictly valid JSON exactly matching the following schema and nothing else (no markdown formatting or commentary):
+        **User Profile (Always Reference Clearly):**
+        - **User Interests**: {user_interests}  # array of strings provided by the user at the start.
+        - **Previous User Responses**: {previous_responses}
+        - **Current Trait Scores**: {current_trait_scores}
+        - **Target Trait**: {target_trait}
+        - **Questions Answered**: {questions_answered_count} of 10
+        - **Trait Counts So Far**: {trait_counts}
+
+        ## 🚨 **STRICT JSON RESPONSE FORMAT (MUST MATCH EXACTLY):**
         {prompt_schema}
+
+        **Important Constraints (ALWAYS FOLLOW THESE):**
+        - NEVER include markdown formatting or commentary in your response.
+        - NEVER repeat previously asked questions or similar variations.
+        - NEVER embed answer options or letters within question texts.
+        - ALWAYS output strictly valid JSON exactly as defined by {prompt_schema}.
+        - ALWAYS clearly personalize each question around user interests provided.
+
+        You must adhere exactly to these instructions to ensure a scientifically robust, engaging, adaptive, and fully personalized personality assessment.
         """
+
         # IMPORTANT: Instruct GPT to output ONLY JSON.
         logging.info("Sending prompt to GPT-4o for question generation.")
         response = client.complete(
@@ -252,7 +310,7 @@ def generate_next_question(session_id):
             ],
             max_tokens=500,
             temperature=0.8,
-            top_p=1.0,
+            # top_p=1.0,
             model=AZURE_OPENAI_MODEL_NAME
         )
 
@@ -294,31 +352,39 @@ def finalize_test(session_id):
             return {"error": "Invalid session ID"}
 
         scores = session.get("scores", {})
+        print(f"Final Scores: {scores}")
         archetype = determine_archetype(scores)
 
-        system_prompt = f"""
+        output_schema = """
+        {
+            "overview": "<Overview summary>",
+            "team_work_style": "<Team work style description>",
+            "ideal_team_situation": "<Ideal team situation description>",
+            "compatible_archetypes": {"<Compatible Archetype 1>": "<Why?>", "<Compatible Archetype 2>": "<Why?>", "...": "..."}
+        }
+        """
+        prompt = f"""
         You are a creative and witty personality archetype expert.
         Given these Big Five scores:
         {json.dumps(scores, indent=2)}
-        And the archetype description: "{knowledge_base["archetypes"][archetype]["description"]}",
+        And the archetype description: {knowledge_base['archetypes'][archetype]['description']},
         generate an engaging, personalized profile with three sections:
-        1. Overview (a fun and concise summary with emojis)
+        1. Overview (a fun and long summary with emojis and examples)
         2. Team Work Style (how you function in a team)
         3. Ideal Team Situation (the environment where you excel)
+        4. Best Archetypes to work with (Who do you work best with)
 
-        Return ONLY a valid JSON object EXACTLY in the following format, with no additional text, explanation, or markdown:
-        {{
-          "overview": "<Overview summary>",
-          "team_work_style": "<Team work style description>",
-          "ideal_team_situation": "<Ideal team situation description>"
-        }}
+        ## 🚨 **STRICT JSON RESPONSE FORMAT (MUST MATCH EXACTLY):**
+        {output_schema}
 
-        Make sure your output starts with '{{' and ends with '}}'.
+         **Important Constraints (ALWAYS FOLLOW THESE):**
+        - NEVER include markdown formatting or commentary in your response.
+        - ALWAYS output strictly valid JSON exactly as defined by {output_schema}.
         """
         logging.info("Sending prompt to GPT-4o for finalizing test results.")
-        response = client.complete(
+        final_response = client.complete(
             messages=[
-                SystemMessage(content=system_prompt),
+                SystemMessage(content=prompt),
                 UserMessage(
                     content="Return only the JSON object as specified.")
             ],
@@ -328,15 +394,15 @@ def finalize_test(session_id):
             model=AZURE_OPENAI_MODEL_NAME
         )
 
-        raw_content = response.choices[0].message.content.strip()
-        logging.debug(f"Raw GPT finalization response: {raw_content}")
+        raw_content = final_response.choices[0].message.content.strip()
+        logging.debug('Raw GPT finalization response: %s' % raw_content)
 
         try:
             if not raw_content:
                 raise ValueError("Empty finalization response")
             response_json = json.loads(raw_content)
-            required_keys = ["overview",
-                             "team_work_style", "ideal_team_situation"]
+            required_keys = ["overview", "team_work_style",
+                             "ideal_team_situation", "compatible_archetypes"]
             if not all(key in response_json for key in required_keys):
                 raise ValueError("Incomplete AI response format")
             return {
@@ -348,11 +414,11 @@ def finalize_test(session_id):
         except (json.JSONDecodeError, ValueError) as json_err:
             logging.error(
                 f"Error in finalizing test: {str(json_err)}. Falling back to default profile.")
-            # Fallback: return a JSON object with the same keys.
             fallback_profile = {
                 "overview": knowledge_base["archetypes"][archetype]["description"],
-                "team_work_style": "You work best in balanced teams, contributing your unique ideas while valuing collaboration.",
-                "ideal_team_situation": "You excel in environments that are dynamic, creative, and supportive."
+                "team_work_style": "You bring creativity and flexibility, thriving in environments that allow exploration and experimentation. You excel at uncovering novel solutions and pushing the boundaries of what's possible.",
+                "ideal_team_situation": "Your talents shine brightest in projects that are innovative, dynamic, and offer opportunities to challenge conventional thinking and explore new ideas.",
+                "compatible_archetypes": "Visionary (shares creativity and openness to new ideas, sparking innovation together), Pragmatist (balances your adventurous spirit with practical planning), Catalyst (energizes collaboration, complementing your adaptability and openness)."
             }
             return {
                 "test_complete": True,
@@ -374,32 +440,40 @@ def determine_archetype(scores):
     highest_match_score = -1
 
     # Assign numerical values to criteria levels for easier comparison
-    level_thresholds = {"high": 4, "medium": 2}
+    level_thresholds = {"high": 5, "medium_high": 4, "medium": 3, "low": 0}
 
     for archetype, data in knowledge_base["archetypes"].items():
         criteria = data["criteria"]
         match_score = 0
 
-        for trait, required_level in criteria.items():
-            user_score = scores.get(trait, 0)
-            required_score = level_thresholds.get(required_level, 2)
+        print(f"Evaluating archetype: '{archetype}' with criteria: {criteria}")
 
-            # Calculate how closely user matches the required level
-            if user_score >= required_score:
-                match_score += (user_score - required_score) + \
-                    1  # Reward matches & higher scores
+        for trait, level in criteria.items():
+            required = level_thresholds[level]
+            user_score = scores.get(trait, 0)
+
+            if user_score >= required:
+                match_score += (user_score - required) + 1
+                print(
+                    f"✅ '{trait}' matched for '{archetype}'. Score: {match_score}")
             else:
-                # Penalize mismatches gently
-                match_score -= (required_score - user_score)
+                match_score -= (required - user_score)
+                print(
+                    f"❌ '{trait}' mismatched for '{archetype}'. Score: {match_score}")
+
+        print(f"Total match score for archetype '{archetype}': {match_score}")
 
         if match_score > highest_match_score:
             highest_match_score = match_score
             best_match = archetype
-
+            print(
+                f"⭐ New best match: '{archetype}' with score {highest_match_score}")
     # If no good match, default to "Explorer"
     if highest_match_score <= 0:
         return "Explorer"
 
+    print(
+        f"Final determined archetype: '{best_match}' with score {highest_match_score}")
     return best_match
 
 
@@ -410,7 +484,7 @@ def continue_test(session_id: str):
         raise HTTPException(status_code=400, detail="Invalid session ID")
     if not session["paused"]:
         raise HTTPException(status_code=400, detail="Test is not paused")
-    session_ref.update({"paused": False})
+    session_ref.update({"paused": False, "start_time": time.time()})
     next_question = generate_next_question(session_id)
     if not next_question:
         return finalize_test(session_id)
