@@ -13,20 +13,27 @@ st.set_page_config(
     layout="centered",
     menu_items={"Report a Bug": "mailto:ayush@ception.one"}
 )
+st.markdown(
+    """
+    <meta property="og:title" content="🚀 Ception Personna Test" />
+    <meta property="og:description" content="Find out your personality archetype in a fun, interactive way!" />
+    <meta property="og:image" content="https://yourdomain.com/static/preview-image.jpg" />
+    <meta property="og:url" content="https://your-app.azurewebsites.net" />
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Ception Personality Test">
+    <meta name="twitter:description" content="Find out your personality archetype in a fun, interactive way!">
+    <meta name="twitter:image" content="https://yourdomain.com/static/preview-image.jpg">
+    """,
+    unsafe_allow_html=True
+)
+
 st.logo(logo, size="large", link="https://personna-v01.ception.one")
+
 
 # Inject custom CSS for a Typeform-inspired dark theme and layout improvements.
 st.markdown(
     """
     <style>
-    /* Dark background and light text */
-    .reportview-container {
-        background: #1e1e1e;
-        color: #f5f5f5;
-    }
-    .sidebar .sidebar-content {
-        background: #2c2c2c;
-    }
     /* Custom font and spacing for titles and headers */
     h1, h2, h3, h4 {
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -39,14 +46,6 @@ st.markdown(
     .main .block-container {
         margin-left: auto;
         margin-right: auto;
-    }
-    /* Logo in top left corner */
-    .logo {
-        position: fixed;
-        top: 10px;
-        left: 10px;
-        width: 120px;
-        z-index: 1000;
     }
     </style>
     """,
@@ -106,7 +105,7 @@ def submit_answer(question, answer, option_mapping=None):
 if st.session_state["step"] == "welcome":
     st.markdown(
         """
-        <div style="text-align: center; padding: 3rem 2rem; color: #f5f5f5;">
+        <div style="text-align: center; padding: 3rem 2rem;">
           <h1 style="font-size: 3.5em; font-weight: bold; margin-bottom: 0.5em;">
             🎭 Welcome to Ception
           </h1>
@@ -180,8 +179,8 @@ elif st.session_state["step"] == "questions":
     st.markdown(
         """
         <div style="text-align: center; margin-top: 2rem;">
-          <h2 style="color: #FFCC00; font-weight: bold;">Time to shine!</h2>
-          <h3 style="color: #f5f5f5;">Answer the question below:</h3>
+          <h2 style="color: #e6b800; font-weight: bold;">Time to shine!</h2>
+          <h3>Answer the question below:</h3>
         </div>
         """,
         unsafe_allow_html=True
