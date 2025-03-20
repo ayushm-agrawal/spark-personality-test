@@ -1,126 +1,144 @@
 {
-    "traits": {
-      "Openness": {
-        "description": "Openness measures creativity, imagination, and a preference for novelty.",
-        "questions": [
-          {
-            "id": "O1",
-            "type": "multiple-choice",
-            "text": "You're starting a new adventure—what excites you most?",
-            "options": {
-              "a": {"text": "Exploring something completely new", "score": 2},
-              "b": {"text": "Enjoying something familiar with a small twist", "score": 1},
-              "c": {"text": "Sticking to what I know and love", "score": 0}
-            }
-          },
-          {
-            "id": "O_optional",
-            "type": "optional-freeform",
-            "text": "What's one creative or unusual hobby you've recently tried or want to try?"
+  "traits": {
+    "Openness": {
+      "description": "Openness measures creativity, imagination, and a preference for novelty.",
+      "questions": [
+        {
+          "id": "O1",
+          "type": "multiple-choice",
+          "text": "You're starting a new adventure—what excites you most?",
+          "options": {
+            "a": {"text": "Exploring something completely new", "score": 2},
+            "b": {"text": "Enjoying something familiar with a small twist", "score": 1},
+            "c": {"text": "Sticking to what I know and love", "score": 0}
           }
-        ]
-      },
-      "Conscientiousness": {
-        "description": "Measures organization, discipline, and goal-oriented behaviors.",
-        "questions": [
-          {
-            "id": "C1",
-            "type": "multiple-choice",
-            "text": "When faced with multiple tasks, you typically...",
-            "options": {
-              "a": {"text": "Create a clear plan and follow it step-by-step", "score": 2},
-              "b": {"text": "Have a rough idea and adapt as I go", "score": 1},
-              "c": {"text": "Tackle things spontaneously", "score": 0}
-            }
-          },
-          {
-            "id": "C_optional",
-            "type": "optional-freeform",
-            "text": "Can you briefly share how you stay organized when things get busy?"
-          }
-        ]
-      },
-      "Extraversion": {
-        "description": "Indicates outgoingness, energy, and enthusiasm in social settings.",
-        "questions": [
-          {
-            "id": "E1",
-            "type": "multiple-choice",
-            "text": "In your ideal weekend scenario, you'd prefer...",
-            "options": {
-              "a": {"text": "A vibrant gathering or party with friends", "score": 2},
-              "b": {"text": "A balance of socializing and alone time", "score": 1},
-              "c": {"text": "Quiet time to relax by yourself", "score": 0}
-            }
-          },
-          {
-            "id": "E_optional",
-            "type": "optional-freeform",
-            "text": "What kind of social activities energize you most?"
-          }
-        ]
-      },
-      "Agreeableness": {
-        "description": "Reflects compassion, cooperation, and friendliness.",
-        "questions": [
-          {
-            "id": "A1",
-            "type": "multiple-choice",
-            "text": "When your team has a conflict, you usually...",
-            "options": {
-              "a": {"text": "Actively mediate to find common ground", "score": 2},
-              "b": {"text": "Encourage open dialogue but avoid taking sides", "score": 1},
-              "c": {"text": "Let them resolve it themselves", "score": 0}
-            }
-          },
-          {
-            "id": "A_optional",
-            "type": "optional-freeform",
-            "text": "Can you briefly describe how you usually handle disagreements?"
-          }
-        ]
-      },
-      "Emotional_Stability": {
-        "description": "Reflects calmness, resilience, and emotional balance under pressure.",
-        "questions": [
-          {
-            "id": "N1",
-            "type": "multiple-choice",
-            "text": "When things don't go according to plan, you generally...",
-            "options": {
-              "a": {"text": "Stay calm and immediately find a solution", "score": 2},
-              "b": {"text": "Feel stress but recover quickly", "score": 1},
-              "c": {"text": "Feel overwhelmed and take a while to adjust", "score": 0}
-            }
-          },
-          {
-            "id": "N_optional",
-            "type": "optional-freeform",
-            "text": "What's one way you keep calm when facing stressful situations?"
-          }
-        ]
-      }
+        },
+        {
+          "id": "O_optional",
+          "type": "optional-freeform",
+          "text": "What's one creative or unusual hobby you've recently tried or want to try?"
+        }
+      ]
     },
-    "archetypes": {
-      "Visionary": {
-        "criteria": {"Openness": "high", "Extraversion": "medium_high"},
-        "description": "You're imaginative and inspiring, bringing bold ideas and enthusiasm to every project. 🌟"
-      },
-      "Operator": {
-        "criteria": {"Conscientiousness": "high"},
-        "description": "You're organized, reliable, and ensure everything runs smoothly and efficiently. ⚙️"
-      },
-      "Catalyst": {
-        "criteria": {"Extraversion": "high", "Agreeableness": "high"},
-        "description": "You're energetic, empathetic, and bring people together, boosting morale and cooperation. 🤝"
-      },
-      "Pragmatist": {
-        "criteria": {"Emotional_Stability": "high", "Conscientiousness": "medium_high"},
-        "description": "You're calm and grounded, guiding your team toward practical, realistic goals. 🎯"
-      },
-      "Explorer": {
-        "criteria": {"Openness": "high", "Emotional_Stability": "medium_high"},
-        "description": "You're curious, adaptable, and thrive on discovering new experiences. 🗺️"
-      }
+    "Conscientiousness": {
+      "description": "Measures organization, discipline, and goal-oriented behaviors.",
+      "questions": [
+        {
+          "id": "C1",
+          "type": "multiple-choice",
+          "text": "When faced with multiple tasks, you typically...",
+          "options": {
+            "a": {"text": "Create a clear plan and follow it step-by-step", "score": 2},
+            "b": {"text": "Have a rough idea and adapt as I go", "score": 1},
+            "c": {"text": "Tackle things spontaneously", "score": 0}
+          }
+        },
+        {
+          "id": "C_optional",
+          "type": "optional-freeform",
+          "text": "Can you briefly share how you stay organized when things get busy?"
+        }
+      ]
+    },
+    "Extraversion": {
+      "description": "Indicates outgoingness, energy, and enthusiasm in social settings.",
+      "questions": [
+        {
+          "id": "E1",
+          "type": "multiple-choice",
+          "text": "In your ideal weekend scenario, you'd prefer...",
+          "options": {
+            "a": {"text": "A vibrant gathering or party with friends", "score": 2},
+            "b": {"text": "A balance of socializing and alone time", "score": 1},
+            "c": {"text": "Quiet time to relax by yourself", "score": 0}
+          }
+        },
+        {
+          "id": "E_optional",
+          "type": "optional-freeform",
+          "text": "What kind of social activities energize you most?"
+        }
+      ]
+    },
+    "Agreeableness": {
+      "description": "Reflects compassion, cooperation, and friendliness.",
+      "questions": [
+        {
+          "id": "A1",
+          "type": "multiple-choice",
+          "text": "When your team has a conflict, you usually...",
+          "options": {
+            "a": {"text": "Actively mediate to find common ground", "score": 2},
+            "b": {"text": "Encourage open dialogue but avoid taking sides", "score": 1},
+            "c": {"text": "Let them resolve it themselves", "score": 0}
+          }
+        },
+        {
+          "id": "A_optional",
+          "type": "optional-freeform",
+          "text": "Can you briefly describe how you usually handle disagreements?"
+        }
+      ]
+    },
+    "Emotional_Stability": {
+      "description": "Reflects calmness, resilience, and emotional balance under pressure.",
+      "questions": [
+        {
+          "id": "N1",
+          "type": "multiple-choice",
+          "text": "When things don't go according to plan, you generally...",
+          "options": {
+            "a": {"text": "Stay calm and immediately find a solution", "score": 2},
+            "b": {"text": "Feel stress but recover quickly", "score": 1},
+            "c": {"text": "Feel overwhelmed and take a while to adjust", "score": 0}
+          }
+        },
+        {
+          "id": "N_optional",
+          "type": "optional-freeform",
+          "text": "What's one way you keep calm when facing stressful situations?"
+        }
+      ]
     }
+  },
+  "archetypes": {
+    "Visionary": {
+      "criteria": {
+        "Openness": "high",
+        "Extraversion": "medium_high"
+      },
+      "description": "You're imaginative and inspiring, bringing bold ideas and enthusiasm to every project. 🌟"
+    },
+    "Operator": {
+      "criteria": {
+        "Conscientiousness": "high",
+        "Agreeableness": "medium"
+      },
+      "description": "You're organized, reliable, and ensure everything runs smoothly and efficiently. ⚙️"
+    },
+    "Catalyst": {
+      "criteria": {
+        "Extraversion": "high",
+        "Agreeableness": "high",
+        "Emotional_Stability": "medium"
+      },
+      "description": "You're energetic, empathetic, and bring people together, boosting morale and cooperation. 🤝"
+    },
+    "Pragmatist": {
+      "criteria": {
+        "Emotional_Stability": "high",
+        "Conscientiousness": "medium_high",
+        "Openness": "medium"
+      },
+      "description": "You're calm and grounded, guiding your team toward practical, realistic goals. 🎯"
+    },
+    "Explorer": {
+      "criteria": {
+        "Openness": "high",
+        "Emotional_Stability": "medium_high",
+        "Extraversion": "medium"
+      },
+      "description": "You're curious, adaptable, and thrive on discovering new experiences. 🗺️"
+    }
+  }   
 }
