@@ -261,6 +261,13 @@ elif st.session_state["step"] == "results":
     archetype = result.get("suggested_archetype", "Unknown")
     description = result.get("archetype_description",
                              "No description available.")
+
+    col1, col2 = st.columns([8, 2])
+    with col2:
+        if st.button("🚀 Meet the Archetypes"):
+            st.session_state["step"] = "archetypes"
+            st.rerun()
+
     st.markdown(
         f"""
         <div style="text-align: center; margin-top: 2rem;">
@@ -285,3 +292,55 @@ elif st.session_state["step"] == "results":
         st.write(description.get("compatible_archetypes"))
     else:
         st.write(description)
+
+elif st.session_state["step"] == "archetypes":
+    st.title("🚀 Meet the Personality Archetypes!")
+    st.write(
+        "Discover the unique personalities shaping amazing teams. Which one are you?")
+
+    # Define your archetypes using local image paths
+    archetypes_info = {
+        "Visionary": {
+            "emoji": "🌟",
+            "image": "assets/visionary.png",
+            "description": "The imaginative dreamer who turns possibilities into realities. Traits: Creative · Enthusiastic · Bold."
+        },
+        "Operator": {
+            "emoji": "⚙️",
+            "image": "assets/operator.png",
+            "description": "The trusted powerhouse behind every great success story. Traits: Reliable · Organized · Efficient."
+        },
+        "Catalyst": {
+            "emoji": "🤝",
+            "image": "assets/catalyst.png",
+            "description": "The energetic spark igniting creativity and teamwork. Traits: Energetic · Empathetic · Motivating."
+        },
+        "Pragmatist": {
+            "emoji": "🎯",
+            "image": "assets/pragmatist.png",
+            "description": "The calm navigator guiding the team steadily forward. Traits: Grounded · Practical · Steady."
+        },
+        "Explorer": {
+            "emoji": "🗺️",
+            "image": "assets/explorer.png",
+            "description": "The curious adventurer who thrives in the unknown. Traits: Curious · Adaptable · Adventurous."
+        }
+    }
+
+    # Define how many columns per row (you can adjust this number)
+    n_cols = 3
+    archetype_items = list(archetypes_info.items())
+
+    # Display archetypes in a grid
+    for i in range(0, len(archetype_items), n_cols):
+        cols = st.columns(n_cols)
+        for j, (name, info) in enumerate(archetype_items[i:i+n_cols]):
+            with cols[j]:
+                st.image(info["image"], use_container_width=True)
+                st.subheader(f'{info["emoji"]} {name}')
+                st.write(info["description"])
+
+    # A "Back" button to return to the results page
+    if st.button("← Back to Results"):
+        st.session_state["step"] = "results"
+        st.rerun()
