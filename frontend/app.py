@@ -1,7 +1,7 @@
 import os
 import time
 import streamlit as st
-from api import start_test, submit_response, select_interests, continue_test, get_results
+from api import start_test, submit_response, select_interests, continue_test, get_results, collect_feedback
 from PIL import Image
 
 im = Image.open("favicon.ico")
@@ -151,7 +151,7 @@ elif st.session_state["step"] == "interests":
         "Other"
     ]
     selected_interests = st.multiselect(
-        "Pick your top interests:", default_interests, help="These are high level areas. You can select or add detailed low level interest below!")
+        "Pick your top interests:", default_interests, max_selections=3, help="These are high level areas. You can select or add detailed low level interest below!")
     custom_interest = st.text_input(
         "Or add a custom interest:", help="You can be descriptive", placeholder="I love coding")
 
@@ -176,11 +176,16 @@ elif st.session_state["step"] == "interests":
 
 # 3️⃣ Questions
 elif st.session_state["step"] == "questions":
+    if "next_question" not in st.session_state or not st.session_state["next_question"]:
+        st.error("❌ No next question found. Please restart the test.")
+        st.stop()
+
+    question = st.session_state["next_question"]
+
     st.markdown(
-        """
+        f"""
         <div style="text-align: center; margin-top: 2rem;">
-          <h2 style="color: #e6b800; font-weight: bold;">Time to shine!</h2>
-          <h3>Answer the question below:</h3>
+          <h4 style="color: #e6b800; font-style: italic; ">{question.get("header")}</h4>
         </div>
         """,
         unsafe_allow_html=True
@@ -200,11 +205,6 @@ elif st.session_state["step"] == "questions":
         minutes, seconds = divmod(remaining, 60)
         st.markdown(f"**Time Remaining:** {minutes:02d}:{seconds:02d}")
 
-    if "next_question" not in st.session_state or not st.session_state["next_question"]:
-        st.error("❌ No next question found. Please restart the test.")
-        st.stop()
-
-    question = st.session_state["next_question"]
     answer_display = ""
 
     if not question.get("type"):
@@ -230,7 +230,7 @@ elif st.session_state["step"] == "questions":
     elif question.get("type") == "optional-freeform":
         st.subheader(question.get("text", ""))
         answer_display = st.text_input(
-            "Your answer:", key=f"q_{question['id']}")
+            "Your answer:", key=f"q_{question['id']}", placeholder=question.get("placeholder", ""))
 
     if st.button("Submit Answer"):
         submit_answer(question, answer_display, option_mapping if question.get(
@@ -277,6 +277,16 @@ elif st.session_state["step"] == "results":
         """,
         unsafe_allow_html=True
     )
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.write("Rate Your Overall Experience: ")
+    rating = st.feedback("stars")
+
+    # Collect user feedback
+    if rating:
+        current_time = time.time()
+        user_session_id = st.session_state["session_id"]
+        collect_feedback(rating, current_time, user_session_id, archetype)
+
     st.markdown("<hr>", unsafe_allow_html=True)
     st.balloons()
     if isinstance(description, dict):
@@ -328,13 +338,13 @@ elif st.session_state["step"] == "archetypes":
     }
 
     # Define how many columns per row (you can adjust this number)
-    n_cols = 3
+    N_COLS = 3
     archetype_items = list(archetypes_info.items())
 
     # Display archetypes in a grid
-    for i in range(0, len(archetype_items), n_cols):
-        cols = st.columns(n_cols)
-        for j, (name, info) in enumerate(archetype_items[i:i+n_cols]):
+    for i in range(0, len(archetype_items), N_COLS):
+        cols = st.columns(N_COLS)
+        for j, (name, info) in enumerate(archetype_items[i:i+N_COLS]):
             with cols[j]:
                 st.image(info["image"], use_container_width=True)
                 st.subheader(f'{info["emoji"]} {name}')
