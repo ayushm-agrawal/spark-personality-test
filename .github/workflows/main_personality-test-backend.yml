@@ -72,12 +72,6 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_A087A37435FC457AA030C96317FD0352 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_57BA4474A4BE401B96F967005DE71215 }}
 
-      - name: Configure Azure Web App startup command
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            az webapp config set --resource-group personality-test-rg --name personality-test-backend --startup-file "gunicorn --bind=0.0.0.0:8000 --workers=4 --timeout=120 -k uvicorn.workers.UvicornWorker main:app"
-
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
