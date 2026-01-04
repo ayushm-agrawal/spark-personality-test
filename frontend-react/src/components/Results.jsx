@@ -525,7 +525,7 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, onClos
       console.error('Failed to generate image:', error);
       setIsGenerating(false);
       // Fallback: copy text to clipboard
-      const text = `I'm ${archetype}! "${teaser}" - Only ${rarity}% get this result. Discover yours at ception.one`;
+      const text = `I'm ${archetype}! "${teaser}" - Only ${rarity}% get this result. Discover yours at personality.ception.one`;
       navigator.clipboard.writeText(text);
       alert('Image saved! If download failed, the text was copied to your clipboard.');
     }
@@ -662,7 +662,7 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, onClos
                   letterSpacing: '0.02em',
                 }}
               >
-                ception.one/personality
+                personality.ception.one
               </div>
 
               {/* Subtle instruction */}
@@ -708,7 +708,7 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, onClos
           Save image, then share to your Instagram Story
         </p>
         <p className="text-center text-[#F1F5F9]/30 text-xs mt-1">
-          Tip: Add a link sticker to ception.one
+          Tip: Add a link sticker to personality.ception.one
         </p>
       </motion.div>
     </motion.div>
