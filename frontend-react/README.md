@@ -98,6 +98,10 @@ frontend-react/
 
 ## Deployment
 
-The app is deployed to Azure Web Apps via GitHub Actions. See `.github/workflows/main_personality-test-frontend.yml` for the deployment workflow.
+The app is deployed to **Vercel**. Connect your GitHub repo to Vercel and configure:
 
-Deployments are triggered automatically on pushes to `main` that modify files in `frontend-react/`.
+- **Framework Preset:** Vite
+- **Root Directory:** `frontend-react`
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+- **Environment Variables:** Set `VITE_API_URL` to your backend API URL
