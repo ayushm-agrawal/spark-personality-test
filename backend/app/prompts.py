@@ -114,8 +114,23 @@ Traditional personality tests fail because they ask people to describe themselve
 ## Current Session Context
 - **Mode:** {{ mode }}
 - **Question Number:** {{ question_number }} of {{ total_questions }}
-- **Traits Assessed So Far:** {{ traits_assessed | join(', ') if traits_assessed else 'None yet' }}
 - **Target Trait:** {{ target_trait }}
+
+## CRITICAL: Trait Targeting Rules
+{% if focused_traits %}
+**ONLY assess these traits:** {{ focused_traits | join(', ') }}
+**DO NOT generate questions for any other traits.**
+
+Questions needed per trait: {{ questions_per_trait }}
+{% if trait_needs %}
+Current trait needs:
+{% for trait, needed in trait_needs.items() %}
+- {{ trait }}: {{ needed }} more question(s) needed
+{% endfor %}
+{% endif %}
+{% endif %}
+
+- **Traits Assessed So Far:** {{ traits_assessed | join(', ') if traits_assessed else 'None yet' }}
 
 {% if mode == 'hackathon' %}
 ## Hackathon Mode Instructions
@@ -218,15 +233,15 @@ Return valid JSON with this exact structure:
   "next_question": {
     "id": "q_{{ session_id }}_{{ question_number }}",
     "trait": "{{ target_trait }}",
-    "trait_targets": ["{{ target_trait }}", "SecondaryTrait"],
+    "trait_targets": ["{{ target_trait }}"],
     "type": "{{ question_type }}",
     "text": "The scenario question text",
     "header": "Brief reaction to previous answer (5-15 words)",
 {% if question_type == 'multiple-choice' %}
     "options": {
-      "a": {"text": "Option A text", "score": <0-2>},
-      "b": {"text": "Option B text", "score": <0-2>},
-      "c": {"text": "Option C text", "score": <0-2>}
+      "a": {"text": "Option A text", "score": 2},
+      "b": {"text": "Option B text", "score": 1},
+      "c": {"text": "Option C text", "score": 0}
     }
 {% else %}
     "placeholder": "Hint for how to respond"
@@ -242,6 +257,26 @@ Return valid JSON with this exact structure:
   }
 }
 ```
+
+## CRITICAL: Score Distribution Rules
+{% if question_type == 'multiple-choice' %}
+**MANDATORY: Each question MUST have EXACTLY this score distribution:**
+- **Option A: score=2** — Strongly indicates the target trait ({{ target_trait }})
+- **Option B: score=1** — Moderately indicates the trait
+- **Option C: score=0** — Does NOT indicate the trait (neutral or opposite)
+
+**DO NOT give all options high scores!** Option C must represent a response that shows LOW or ABSENT presence of {{ target_trait }}, not just a different way of expressing it.
+
+Example for Extraversion:
+- A (score=2): "Rally the tired team with energy and enthusiasm"
+- B (score=1): "Check in with teammates individually to see how they're doing"
+- C (score=0): "Put on headphones and power through solo"
+
+Example for Emotional_Stability:
+- A (score=2): "Take a breath, assess the situation calmly, and prioritize"
+- B (score=1): "Feel the stress but push through systematically"
+- C (score=0): "Panic internally, stress shows on your face"
+{% endif %}
 
 CRITICAL: The "predicted_next_answer" field is REQUIRED for pre-fetching optimization.
 Base your prediction on the user's response patterns so far. If no patterns yet, use balanced probabilities.
@@ -263,7 +298,10 @@ def render_system_prompt(
     current_context: Optional[str] = None,
     context_scenario_hooks: Optional[List[str]] = None,
     traits_assessed: Optional[List[str]] = None,
-    inferred_tendencies: Optional[List[str]] = None
+    inferred_tendencies: Optional[List[str]] = None,
+    focused_traits: Optional[List[str]] = None,
+    questions_per_trait: int = 2,
+    trait_needs: Optional[Dict] = None
 ) -> str:
     """
     Render the system prompt with session-specific context.
@@ -301,7 +339,10 @@ def render_system_prompt(
         current_context=current_context,
         context_scenario_hooks=context_scenario_hooks or [],
         traits_assessed=traits_assessed or [],
-        inferred_tendencies=inferred_tendencies or []
+        inferred_tendencies=inferred_tendencies or [],
+        focused_traits=focused_traits or [],
+        questions_per_trait=questions_per_trait,
+        trait_needs=trait_needs or {}
     )
 
 
