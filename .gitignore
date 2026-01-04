@@ -9,4 +9,6 @@ pyvenv.cfg
 __pycache__
 upload_traits.py
 
-.DS_Store/
+# macOS
+.DS_Store
+**/.DS_Store
