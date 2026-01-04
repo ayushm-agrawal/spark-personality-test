@@ -400,8 +400,8 @@ export default function Assessment({
         </div>
       </div>
 
-      {/* Main content - extra bottom padding on desktop for TraitBar */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 md:px-6 py-4 md:py-0 pb-8 md:pb-40">
+      {/* Main content - extra bottom padding for TraitBar clearance */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 md:px-6 py-4 md:py-0 pb-32 md:pb-40">
         <AnimatePresence mode="wait">
           {/* TRANSITION SCREEN - Shows answer + typewriter header */}
           {isInTransition ? (
