@@ -14,6 +14,7 @@ import os
 import logging
 import random
 import math
+import httpx
 from dotenv import load_dotenv
 
 # Configure logging to show debug messages
@@ -22,6 +23,13 @@ from openai import AzureOpenAI
 from fastapi import HTTPException
 from firebase import db
 from models import UserResponse, InterestSelection
+
+# Import new modular configurations
+from archetypes import ARCHETYPES, ARCHETYPE_COMPATIBILITY, get_archetype_for_display
+from modes import ASSESSMENT_MODES, get_mode_config, get_mode_prompt_context, should_skip_interests, get_interest_requirements
+from interests import get_interest_categories, get_life_areas, build_interest_prompt, validate_interests
+from prompts import render_system_prompt, infer_tendencies, LIFE_CONTEXT_CATEGORIES, get_life_context_details
+from prefetch import init_prefetcher, get_prefetcher
 
 # Load environment variables from .env file
 load_dotenv()
@@ -33,11 +41,22 @@ AZURE_OPENAI_API_KEY = os.getenv(
     "AZURE_OPENAI_API_KEY", "be2c4fac7e744fb3b2083d0c971e54f8")
 AZURE_OPENAI_MODEL_NAME = os.getenv("AZURE_OPENAI_MODEL_NAME", "gpt-5.2-chat")
 
-# Initialize Azure OpenAI Client
+# Initialize httpx client with connection pooling for better performance
+http_client = httpx.Client(
+    limits=httpx.Limits(
+        max_connections=100,           # Maximum total connections
+        max_keepalive_connections=20,  # Keep-alive connections for reuse
+        keepalive_expiry=30            # Keep connections alive for 30 seconds
+    ),
+    timeout=httpx.Timeout(60.0, connect=10.0)  # 60s total, 10s connect timeout
+)
+
+# Initialize Azure OpenAI Client with connection pooling
 client = AzureOpenAI(
     api_key=AZURE_OPENAI_API_KEY,
     api_version="2024-02-01",
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    http_client=http_client,
 )
 
 # Load the system prompt from a local markdown file
@@ -66,130 +85,192 @@ knowledge_base = load_knowledge_base()
 
 
 # ============================================================================
+# PRE-FETCHING HELPER FUNCTIONS
+# ============================================================================
+
+async def generate_prefetch_question(
+    session_id: str,
+    simulated_answer: str,
+    simulate_fn=None
+) -> dict:
+    """
+    Async wrapper for question generation used by prefetcher.
+
+    This simulates what would happen if the user selected a specific answer,
+    then generates the next question based on that simulated state.
+
+    Args:
+        session_id: The session ID
+        simulated_answer: The answer key to simulate (e.g., "a", "b", "c")
+        simulate_fn: Optional function to update session state (not used in simple mode)
+
+    Returns:
+        The generated next question dict
+    """
+    import asyncio
+
+    # Run the sync generation in a thread pool to not block
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        _generate_with_simulated_answer,
+        session_id,
+        simulated_answer
+    )
+    return result
+
+
+def _generate_with_simulated_answer(session_id: str, simulated_answer: str) -> dict:
+    """
+    Generate a question as if the user had selected a specific answer.
+
+    This is a lightweight version that doesn't persist the simulated answer,
+    just uses it to generate an appropriate next question.
+    """
+    try:
+        session_doc = db.collection("sessions").document(session_id)
+        session = session_doc.get().to_dict()
+        if not session:
+            return {"error": "Invalid session data"}
+
+        current_question = session.get("current_question")
+        if not current_question:
+            return {"error": "No current question"}
+
+        # Simulate the score update for prediction purposes
+        trait = current_question.get("trait")
+        simulated_scores = session.get("scores", {}).copy()
+        simulated_trait_counts = session.get("trait_counts", {}).copy()
+
+        if current_question["type"] == "multiple-choice":
+            option = current_question["options"].get(simulated_answer.lower())
+            if option and trait:
+                simulated_scores[trait] = simulated_scores.get(trait, 0) + option.get("score", 0)
+                simulated_trait_counts[trait] = simulated_trait_counts.get(trait, 0) + 1
+
+        # Generate with simulated context (don't persist these changes)
+        mode = session.get("mode", "overall")
+        mode_config = get_mode_config(mode)
+        question_count = len(session.get("responses", {})) + 1  # +1 for simulated answer
+        question_count_target = session.get("question_count_target", 10)
+
+        if question_count >= question_count_target:
+            # Would be the last question - don't prefetch finalization
+            return {"prefetch_skip": True, "reason": "test_would_complete"}
+
+        # Calculate target trait based on simulated state
+        num_traits = len(simulated_trait_counts)
+        questions_per_trait = max(1, question_count_target // num_traits)
+        trait_needs = {t: questions_per_trait - c for t, c in simulated_trait_counts.items()}
+        target_trait = max(trait_needs, key=trait_needs.get)
+
+        # Use same logic as generate_next_question but with simulated state
+        freeform_chance = mode_config.get("freeform_probability", 0.15)
+        import random
+        question_type = "multiple-choice" if random.random() > freeform_chance else "optional-freeform"
+
+        user_interests = session.get("interests", [])
+        current_context = None
+        context_hooks = []
+
+        if mode in ["deep_dive", "interest"] and user_interests:
+            current_context = user_interests[question_count % len(user_interests)]
+            context_data = get_life_context_details(current_context)
+            context_hooks = context_data.get("scenario_contexts", [])
+
+        # Build simulated answer history
+        answer_history = session.get("answer_history", []).copy()
+        answer_history.append({
+            "question_id": current_question.get("id", ""),
+            "question_summary": current_question.get("text", "")[:50] + "...",
+            "selected_option": simulated_answer,
+            "trait_signals": [trait] if trait else [],
+            "response_time": None
+        })
+
+        tendencies = infer_tendencies(answer_history)
+        trait_scores_detailed = session.get("trait_scores_detailed", {}).copy()
+        if trait and trait in trait_scores_detailed:
+            if current_question["type"] == "multiple-choice":
+                option = current_question["options"].get(simulated_answer.lower())
+                if option:
+                    trait_scores_detailed[trait]["total"] += option.get("score", 0)
+                    trait_scores_detailed[trait]["count"] += 1
+
+        traits_assessed = [t for t, c in simulated_trait_counts.items() if c > 0]
+
+        # Render prompt with simulated state
+        next_question_prompt = render_system_prompt(
+            mode=mode if mode != "interest" else "deep_dive",
+            question_number=question_count + 1,
+            total_questions=question_count_target,
+            session_id=session_id,
+            target_trait=target_trait,
+            question_type=question_type,
+            previous_answers=answer_history,
+            trait_scores=trait_scores_detailed,
+            life_contexts=user_interests if mode in ["interest", "deep_dive"] else None,
+            current_context=current_context,
+            context_scenario_hooks=context_hooks,
+            traits_assessed=traits_assessed,
+            inferred_tendencies=tendencies
+        )
+
+        # Generate question (this is the expensive LLM call)
+        response_gpt = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": next_question_prompt},
+                {"role": "user", "content": "Return only the JSON object as specified."}
+            ],
+            max_completion_tokens=2000,
+            model=AZURE_OPENAI_MODEL_NAME,
+            reasoning_effort="low"
+        )
+
+        raw_content = response_gpt.choices[0].message.content
+        if not raw_content:
+            return {"error": "Empty AI response"}
+
+        cleaned_json = raw_content.strip().replace("```json", "").replace("```", "").strip()
+
+        try:
+            response_content = json.loads(cleaned_json)
+            next_question = response_content.get("next_question", {})
+            if not next_question:
+                return {"error": "Invalid AI response format"}
+
+            # Mark as prefetched
+            next_question["_prefetched"] = True
+            next_question["_prefetched_for_answer"] = simulated_answer
+
+            return next_question
+        except json.JSONDecodeError:
+            return {"error": "Failed to parse AI response JSON"}
+
+    except Exception as e:
+        logging.error(f"Prefetch generation error: {e}")
+        return {"error": str(e)}
+
+
+# Initialize the prefetcher (lazy initialization)
+def _init_prefetcher_if_needed():
+    """Initialize prefetcher on first use."""
+    if get_prefetcher() is None:
+        init_prefetcher(generate_prefetch_question)
+
+
+# ============================================================================
 # ARCHETYPE PROFILES AND MATCHING SYSTEM
 # ============================================================================
 
-# Ideal archetype profiles as normalized scores (0-100 scale)
-# These represent the "ideal" Big Five profile for each archetype
+# Build ARCHETYPE_PROFILES from the new archetypes module
 ARCHETYPE_PROFILES = {
-    "Visionary": {
-        "Openness": 90,
-        "Conscientiousness": 50,
-        "Extraversion": 75,
-        "Agreeableness": 60,
-        "Emotional_Stability": 55
-    },
-    "Operator": {
-        "Openness": 45,
-        "Conscientiousness": 90,
-        "Extraversion": 50,
-        "Agreeableness": 65,
-        "Emotional_Stability": 70
-    },
-    "Catalyst": {
-        "Openness": 70,
-        "Conscientiousness": 55,
-        "Extraversion": 90,
-        "Agreeableness": 85,
-        "Emotional_Stability": 60
-    },
-    "Pragmatist": {
-        "Openness": 55,
-        "Conscientiousness": 75,
-        "Extraversion": 50,
-        "Agreeableness": 60,
-        "Emotional_Stability": 90
-    },
-    "Explorer": {
-        "Openness": 85,
-        "Conscientiousness": 40,
-        "Extraversion": 60,
-        "Agreeableness": 55,
-        "Emotional_Stability": 70
-    }
+    name: data["big_five_profile"]
+    for name, data in ARCHETYPES.items()
 }
 
-# Team compatibility mapping - which archetypes work best together
-ARCHETYPE_COMPATIBILITY = {
-    "Visionary": {
-        "best_partners": ["Operator", "Pragmatist"],
-        "good_partners": ["Catalyst", "Explorer"],
-        "complementary_reason": {
-            "Operator": "Operators ground your bold ideas and ensure they actually get built",
-            "Pragmatist": "Pragmatists help you prioritize and set realistic milestones",
-            "Catalyst": "Catalysts amplify your enthusiasm and rally the team around your vision",
-            "Explorer": "Explorers share your creative spirit but may need an anchor"
-        }
-    },
-    "Operator": {
-        "best_partners": ["Visionary", "Catalyst"],
-        "good_partners": ["Pragmatist", "Explorer"],
-        "complementary_reason": {
-            "Visionary": "Visionaries provide the creative direction you excel at executing",
-            "Catalyst": "Catalysts keep team energy high while you focus on delivery",
-            "Pragmatist": "Pragmatists share your reliability but you may lack creative tension",
-            "Explorer": "Explorers push boundaries that you can help structure"
-        }
-    },
-    "Catalyst": {
-        "best_partners": ["Operator", "Pragmatist"],
-        "good_partners": ["Visionary", "Explorer"],
-        "complementary_reason": {
-            "Operator": "Operators provide the structure to channel your team-building energy",
-            "Pragmatist": "Pragmatists keep you grounded when your enthusiasm runs high",
-            "Visionary": "Visionaries give you inspiring ideas to rally the team around",
-            "Explorer": "Explorers match your energy but you may drift without a planner"
-        }
-    },
-    "Pragmatist": {
-        "best_partners": ["Visionary", "Catalyst"],
-        "good_partners": ["Operator", "Explorer"],
-        "complementary_reason": {
-            "Visionary": "Visionaries bring the bold ideas you can shape into achievable goals",
-            "Catalyst": "Catalysts add the people energy while you maintain steady progress",
-            "Operator": "Operators share your reliability—great for execution, may lack innovation",
-            "Explorer": "Explorers push you to consider unconventional approaches"
-        }
-    },
-    "Explorer": {
-        "best_partners": ["Operator", "Pragmatist"],
-        "good_partners": ["Visionary", "Catalyst"],
-        "complementary_reason": {
-            "Operator": "Operators help you ship your discoveries and experiments",
-            "Pragmatist": "Pragmatists help you focus your curiosity on what matters most",
-            "Visionary": "Visionaries share your openness—exciting but may lack execution focus",
-            "Catalyst": "Catalysts energize your explorations but you need someone to build"
-        }
-    }
-}
-
-# Assessment mode configurations
-ASSESSMENT_MODES = {
-    "quick": {
-        "name": "Quick Mode",
-        "description": "Hackathon Personality - Fast 6-question assessment focused on collaboration under pressure",
-        "question_count": 6,
-        "traits_per_question": 1,
-        "question_framing": "hackathon",
-        "time_estimate": "2 minutes"
-    },
-    "standard": {
-        "name": "Standard Mode",
-        "description": "Team Personality - Balanced 10-question assessment with interest personalization",
-        "question_count": 10,
-        "traits_per_question": 1,
-        "question_framing": "general",
-        "time_estimate": "5 minutes"
-    },
-    "deep": {
-        "name": "Deep Mode",
-        "description": "Full Profile - Comprehensive 15-question assessment with detailed trait analysis",
-        "question_count": 15,
-        "traits_per_question": 1,
-        "question_framing": "detailed",
-        "time_estimate": "10 minutes"
-    }
-}
+# Note: ARCHETYPE_COMPATIBILITY is imported from archetypes.py
+# Note: ASSESSMENT_MODES is imported from modes.py
 
 
 def normalize_scores(raw_scores: dict, trait_counts: dict) -> dict:
@@ -335,25 +416,30 @@ def determine_archetype(scores: dict, trait_counts: dict = None) -> dict:
 # SESSION MANAGEMENT FUNCTIONS
 # ============================================================================
 
-def start_test(mode: str = "standard") -> dict:
+def start_test(mode: str = "overall") -> dict:
     """
     Start a new personality test session.
 
     This function generates a new session ID, initializes session data in Firestore,
-    and generates the first question for the test using GPT-4o.
+    and handles mode-specific routing (some modes skip interest selection).
 
     Args:
-        mode: Assessment mode - 'quick' (6 questions), 'standard' (10 questions),
-              or 'deep' (15 questions). Defaults to 'standard'.
+        mode: Assessment mode - 'hackathon', 'overall', or 'interest'.
+              Defaults to 'overall'.
 
     Returns:
-        dict: A dictionary containing the session ID, mode info, and the first question
-              under the key "next_question".
+        dict: A dictionary containing:
+            - session_id: The unique session identifier
+            - mode: The selected assessment mode
+            - mode_config: Configuration for the mode (display name, question count, etc.)
+            - ui_flow: Instructions for frontend on what to display next
+            - next_question: (Optional) First question if skipping interest selection
+            - interest_config: (Optional) Interest selection requirements if needed
     """
     # Validate and get mode configuration
     if mode not in ASSESSMENT_MODES:
-        mode = "standard"
-    mode_config = ASSESSMENT_MODES[mode]
+        mode = "overall"
+    mode_config = get_mode_config(mode)
 
     session_id = str(uuid.uuid4())
     trait_counts = {trait: 0 for trait in knowledge_base["traits"]}
@@ -370,14 +456,67 @@ def start_test(mode: str = "standard") -> dict:
         "archetype": None,
         "mode": mode,
         "question_count_target": mode_config["question_count"],
+        "scenario_type": mode_config.get("scenario_type", "varied"),
+        # New: Answer history for LLM context and pre-fetching
+        "answer_history": [],
+        # New: Structured trait scores for template
+        "trait_scores_detailed": {trait: {"total": 0, "count": 0} for trait in knowledge_base["traits"]},
+        # New: Predicted answers from LLM for pre-fetching
+        "predicted_next_answer": None,
     }
     db.collection("sessions").document(session_id).set(session_data)
-    return {
+
+    # Determine UI flow based on mode
+    interest_requirements = get_interest_requirements(mode)
+
+    # Build response
+    response = {
         "session_id": session_id,
         "mode": mode,
-        "mode_config": mode_config,
-        "next_question": generate_next_question(session_id)
+        "mode_config": {
+            "display_name": mode_config["display_name"],
+            "description": mode_config["description"],
+            "duration_label": mode_config["duration_label"],
+            "question_count": mode_config["question_count"]
+        }
     }
+
+    if should_skip_interests(mode):
+        # Hackathon mode - skip interests, go directly to questions
+        response["ui_flow"] = {
+            "show_interest_selection": False,
+            "proceed_directly_to_questions": True
+        }
+        response["next_question"] = generate_next_question(session_id)
+    elif mode_config.get("allow_optional_interests"):
+        # Overall mode - optional life context selection (same as deep_dive)
+        from prompts import get_all_life_contexts
+        response["ui_flow"] = {
+            "show_interest_selection": True,
+            "interests_optional": True,
+            "skip_label": "Skip - assess me across all areas"
+        }
+        response["interest_config"] = {
+            "categories": get_all_life_contexts(),  # Same life contexts as deep_dive
+            "optional": True,
+            "min": 2,
+            "max": 4
+        }
+    else:
+        # Deep dive mode - required life context selection
+        from prompts import get_all_life_contexts
+        response["ui_flow"] = {
+            "show_interest_selection": True,
+            "interests_optional": False
+        }
+        response["interest_config"] = {
+            "categories": get_all_life_contexts(),  # Same life contexts as overall mode
+            "min": mode_config.get("min_interests", 2),
+            "max": mode_config.get("max_interests", 4),
+            "allow_custom": True
+        }
+
+    return response
 
 
 def select_interests(selection: InterestSelection) -> dict:
@@ -520,6 +659,30 @@ def submit_response(user_response: UserResponse):
             # Update trait counts
             session["trait_counts"][trait] += 1
 
+            # Update detailed trait scores for template
+            if "trait_scores_detailed" not in session:
+                session["trait_scores_detailed"] = {t: {"total": 0, "count": 0} for t in knowledge_base["traits"]}
+
+            score_added = 0
+            if current_question["type"] == "multiple-choice":
+                option = current_question["options"].get(selected_key)
+                if option:
+                    score_added = option.get("score", 0)
+            session["trait_scores_detailed"][trait]["total"] += score_added
+            session["trait_scores_detailed"][trait]["count"] += 1
+
+            # Add to answer history for LLM context
+            if "answer_history" not in session:
+                session["answer_history"] = []
+
+            session["answer_history"].append({
+                "question_id": user_response.question_id,
+                "question_summary": current_question.get("text", "")[:50] + "...",
+                "selected_option": selected_key,
+                "trait_signals": [trait] if trait else [],
+                "response_time": None  # Will be set below
+            })
+
             # Track response time
             current_time = time.time()
             last_time = session.get(
@@ -529,6 +692,9 @@ def submit_response(user_response: UserResponse):
 
             if user_response.question_id:
                 session["response_times"][user_response.question_id] = response_time
+                # Update response time in the last answer history entry
+                if session.get("answer_history"):
+                    session["answer_history"][-1]["response_time"] = response_time
             else:
                 logging.warning(
                     "Received a response with no valid question_id; skipping response time update")
@@ -538,7 +704,9 @@ def submit_response(user_response: UserResponse):
             "responses": session["responses"],
             "trait_counts": session["trait_counts"],
             "response_times": session["response_times"],
-            "last_question_time": session["last_question_time"]
+            "last_question_time": session["last_question_time"],
+            "answer_history": session.get("answer_history", []),
+            "trait_scores_detailed": session.get("trait_scores_detailed", {})
         })
 
         # Timer disabled - let users complete at their own pace
@@ -546,7 +714,24 @@ def submit_response(user_response: UserResponse):
         #     session_ref.update({"paused": True})
         #     return {"test_paused": True, "message": "Time is up! Continue or get your results?"}
 
-        result = generate_next_question(user_response.session_id)
+        # Check prefetch cache first for faster response
+        prefetcher = get_prefetcher()
+        cached_question = None
+        if prefetcher and current_question:
+            question_id = current_question.get("id", "")
+            cached_question = prefetcher.get_cached_question_sync(
+                session_id=user_response.session_id,
+                current_question_id=question_id,
+                answer_key=selected_key
+            )
+
+        if cached_question:
+            logging.info("[PREFETCH] Using cached question - skipping LLM call!")
+            # Store the cached question as current
+            session_doc.update({"current_question": cached_question})
+            result = cached_question
+        else:
+            result = generate_next_question(user_response.session_id)
 
         # Check if test is complete (generate_next_question returns finalize_test result)
         if result.get("test_complete"):
@@ -587,8 +772,8 @@ def generate_next_question(session_id: str) -> dict:
 
         # Get mode-based question count target (default to 10 for backwards compatibility)
         question_count_target = session.get("question_count_target", 10)
-        mode = session.get("mode", "standard")
-        mode_config = ASSESSMENT_MODES.get(mode, ASSESSMENT_MODES["standard"])
+        mode = session.get("mode", "overall")
+        mode_config = get_mode_config(mode)
 
         question_count = len(session.get("responses", {}))
         if question_count >= question_count_target:
@@ -609,94 +794,55 @@ def generate_next_question(session_id: str) -> dict:
                        count in trait_counts.items()}
         target_trait = max(trait_needs, key=trait_needs.get)
 
-        # Freeform questions are less common in quick mode, more common in deep mode
-        freeform_chance = 0.05 if mode == "quick" else 0.1 if mode == "standard" else 0.2
+        # Freeform probability varies by mode
+        freeform_chance = mode_config.get("freeform_probability", 0.15)
         question_type = "multiple-choice" if random.random() > freeform_chance else "optional-freeform"
 
-        # Get mode-specific question framing
-        question_framing = mode_config.get("question_framing", "general")
+        # Get user interests/life contexts
+        user_interests = session.get("interests", [])
 
-        if question_type == "multiple-choice":
-            prompt_schema = f"""{{
-  "next_question": {{
-    "id": "generated_question_{session_id}_{question_count}",
-    "trait": "{target_trait}",
-    "type": "multiple-choice",
-    "text": "<A concise question that does NOT include any option letters or texts>",
-    "options": {{
-      "a": {{"text": "<Option A text>", "score": <score_value>}},
-      "b": {{"text": "<Option B text>", "score": <score_value>}},
-      "c": {{"text": "<Option C text>", "score": <score_value>}}
-    }},
-    "header": "<Based on users previous choice, set a header on top of the next question. Be humorous, concise to keep them engaged. Keep it gender neutral>"
-  }}
-}}"""
-        else:
-            prompt_schema = f"""{{
-  "next_question": {{
-    "id": "optional_freeform_{session_id}_{question_count}",
-    "trait": "{target_trait}",
-    "type": "optional-freeform",
-    "text": "<A clear and simple freeform question that is easy to answer and does NOT include any options and does NOT ask them for any personal information like 'tell me your business idea'>"
-    "placeholder": "<A suitable placeholder on how user should answer this question without giving them the answer. Be creative with the response here>"
-    "header": "<Based on users previous choice, set a header on top of the next question. For example: if the user responded fast, then you can say 'Wow.. speedy responses'. Keep it gender neutral>"
-  }}
-}}"""
+        # Determine current context for deep_dive mode (renamed from 'interest' mode)
+        current_context = None
+        context_hooks = []
+        if mode == "deep_dive" and user_interests:
+            current_context = user_interests[question_count % len(user_interests)]
+            context_data = get_life_context_details(current_context)
+            context_hooks = context_data.get("scenario_contexts", [])
+        elif mode == "interest" and user_interests:
+            # Legacy support for 'interest' mode -> treat as deep_dive
+            current_context = user_interests[question_count % len(user_interests)]
+            interest_data = build_interest_prompt(current_context)
+            # Extract hooks from interest data if available
+            from interests import get_interest_context
+            int_context = get_interest_context(current_context)
+            context_hooks = int_context.get("scenario_contexts", [])
 
-        user_interests = json.dumps(session["interests"])
-        previous_responses = json.dumps(session["responses"])
-        previous_response_times = json.dumps(session["response_times"])
-        current_trait_scores = json.dumps(session["scores"])
-        questions_answered_count = question_count
-        trait_counts_str = json.dumps(trait_counts)
+        # Get answer history and infer tendencies
+        answer_history = session.get("answer_history", [])
+        tendencies = infer_tendencies(answer_history)
 
-        # Mode-specific framing instructions
-        framing_instructions = {
-            "hackathon": """
-- Frame questions around hackathon/sprint scenarios (e.g., "You're in a 24-hour hackathon and...")
-- Focus on collaboration under time pressure, handling ambiguity, and rapid decision-making
-- Keep scenarios fast-paced and action-oriented""",
-            "general": """
-- IMPORTANT: Pick ONLY ONE interest from the user's list for each question - rotate through interests
-- Create VARIED scenarios: personal projects, side hustles, hobbies, learning new skills, creative endeavors, social situations
-- AVOID generic "team project" or "working with others" framings - be more creative and specific
-- Examples: "You're learning a new {interest} technique...", "You discover a trending {interest} topic...", "A friend asks for your {interest} advice..."
-- Make each question feel fresh and different from the last""",
-            "detailed": """
-- Ask nuanced questions that explore trait subtleties
-- Include scenarios that reveal how traits interact
-- Create rich, specific scenarios based on ONE interest at a time
-- Allow for more thoughtful, reflective responses"""
-        }
+        # Get detailed trait scores for template
+        trait_scores_detailed = session.get("trait_scores_detailed", {})
 
-        framing_context = framing_instructions.get(
-            question_framing, framing_instructions["general"])
+        # Get list of traits already assessed
+        traits_assessed = [t for t, c in trait_counts.items() if c > 0]
 
-        next_question_prompt = f"""
-**User Profile:**
-- User Interests: {user_interests}
-- Previous Responses: {previous_responses}
-- Previous Response Times: {previous_response_times}
-- Current Trait Scores: {current_trait_scores}
-- Target Trait: {target_trait}
-- Questions Answered: {questions_answered_count} of {question_count_target}
-- Trait Counts: {trait_counts_str}
-- Assessment Mode: {mode} ({mode_config['description']})
-
-## MODE-SPECIFIC FRAMING:
-{framing_context}
-
-## STRICT JSON RESPONSE FORMAT (MUST MATCH EXACTLY):
-{prompt_schema}
-
-Important Constraints:
-- NEVER include markdown formatting or commentary in your response.
-- NEVER repeat previously asked questions.
-- NEVER embed answer options within question texts.
-- ALWAYS output strictly valid JSON exactly as defined above.
-- ALWAYS personalize the question based on the user interests.
-- Follow the mode-specific framing guidelines above.
-"""
+        # Render the system prompt using Jinja2 template
+        next_question_prompt = render_system_prompt(
+            mode=mode if mode != "interest" else "deep_dive",  # Normalize mode name
+            question_number=question_count + 1,
+            total_questions=question_count_target,
+            session_id=session_id,
+            target_trait=target_trait,
+            question_type=question_type,
+            previous_answers=answer_history,
+            trait_scores=trait_scores_detailed,
+            life_contexts=user_interests if mode in ["interest", "deep_dive"] else None,
+            current_context=current_context,
+            context_scenario_hooks=context_hooks,
+            traits_assessed=traits_assessed,
+            inferred_tendencies=tendencies
+        )
         logging.info("Sending prompt to GPT for question generation.")
         response_gpt = client.chat.completions.create(
             messages=[
@@ -724,7 +870,21 @@ Important Constraints:
             if not next_question:
                 logging.error("GPT response JSON missing 'next_question' key")
                 return {"error": "Invalid AI response format"}
-            session_doc.update({"current_question": next_question})
+
+            # Extract predicted_next_answer for pre-fetching (Phase 4)
+            predicted_next = response_content.get("predicted_next_answer", {})
+            if predicted_next:
+                logging.debug("Predicted next answer: %s", predicted_next)
+
+            # Store both the question and prediction
+            session_doc.update({
+                "current_question": next_question,
+                "predicted_next_answer": predicted_next
+            })
+
+            # Include prediction in response for pre-fetching system
+            next_question["_predicted_next"] = predicted_next
+
             return next_question
         except json.JSONDecodeError as json_err:
             logging.error(
@@ -742,7 +902,7 @@ def finalize_test(session_id: str) -> dict:
 
     Retrieves the session data, determines the best matching archetype using cosine similarity,
     and sends a prompt to GPT-4o to generate a detailed, personalized profile in JSON format.
-    If GPT-4o returns malformed JSON, a fallback profile is provided.
+    Returns rich archetype data including mode-specific insights.
 
     Args:
         session_id (str): The Firestore session ID.
@@ -752,12 +912,13 @@ def finalize_test(session_id: str) -> dict:
             - test_complete (bool): True if the test is finalized.
             - final_scores (dict): The user's raw trait scores.
             - normalized_scores (dict): Scores normalized to 0-100 scale.
-            - suggested_archetype (str): The determined personality archetype.
+            - archetype (dict): Rich archetype data (name, tagline, emoji, description, etc.)
             - archetype_confidence (float): Confidence score for the match (0-100).
             - trait_breakdown (dict): Detailed analysis per trait.
             - all_matches (dict): Similarity scores for all archetypes.
-            - archetype_description (dict): A detailed profile in JSON format.
-            - compatibility (dict): Team compatibility information.
+            - personalized_profile (dict): AI-generated personalized insights.
+            - mode (str): The assessment mode used.
+            - mode_specific (dict): Mode-specific insights (e.g., hackathon superpower).
         In case of errors, returns a dictionary with an "error" key.
     """
     try:
@@ -769,64 +930,80 @@ def finalize_test(session_id: str) -> dict:
 
         scores = session.get("scores", {})
         trait_counts = session.get("trait_counts", {})
+        mode = session.get("mode", "overall")
+        interests = session.get("interests", [])
 
-        # Use the new cosine similarity-based archetype determination
+        # Use the cosine similarity-based archetype determination
         archetype_result = determine_archetype(scores, trait_counts)
-        archetype = archetype_result["archetype"]
+        archetype_name = archetype_result["archetype"]
         normalized_scores = archetype_result["normalized_scores"]
         confidence = archetype_result["confidence"]
         trait_breakdown = archetype_result["trait_breakdown"]
         all_matches = archetype_result["all_matches"]
         compatibility = archetype_result["compatibility"]
 
-        output_schema = """{
-  "overview": "<Overview summary>",
-  "team_work_style": "<Team work style description>",
-  "ideal_team_situation": "<Ideal team situation description>",
-  "compatible_archetypes": {"<Compatible Archetype 1>": "<Why?>", "<Compatible Archetype 2>": "<Why?>"}
+        # Get rich archetype data from archetypes.py
+        archetype_data = get_archetype_for_display(archetype_name)
+        raw_archetype = ARCHETYPES.get(archetype_name, {})
+
+        # Build mode-specific output schema
+        if mode == "hackathon":
+            output_schema = """{
+  "overview": "<2-3 sentence summary with hackathon context>",
+  "hackathon_style": "<How they perform in intense 24-hour sprints>",
+  "team_role": "<Their natural role in a hackathon team>",
+  "watch_out_for": "<One honest growth area specific to hackathons>"
+}"""
+        else:
+            output_schema = """{
+  "overview": "<2-3 sentence engaging summary>",
+  "strengths_in_action": "<How their traits manifest in real situations>",
+  "growth_edge": "<One honest growth opportunity>",
+  "ideal_environment": "<Where they thrive most>"
 }"""
 
-        # Enhanced prompt with normalized scores and trait breakdown
+        # Build prompt with rich archetype data
         prompt = f"""
-You are a creative and witty personality archetype expert.
-The user has been assessed as a "{archetype}" with {confidence:.0f}% confidence.
+You are a personality insight expert. Generate a personalized profile.
 
-Their Big Five trait profile (normalized 0-100 scale):
+ARCHETYPE: {archetype_name}
+TAGLINE: {archetype_data.get('tagline', '')}
+ZONE OF GENIUS: {archetype_data.get('zone_of_genius', '')}
+DEEPEST ASPIRATION: {archetype_data.get('deepest_aspiration', '')}
+GROWTH OPPORTUNITY: {archetype_data.get('growth_opportunity', '')}
+
+USER'S BIG FIVE PROFILE (0-100 scale):
 {json.dumps(normalized_scores, indent=2)}
 
-Trait breakdown:
+TRAIT ANALYSIS:
 {json.dumps(trait_breakdown, indent=2)}
 
-Archetype description: {knowledge_base['archetypes'][archetype]['description']}
+ASSESSMENT MODE: {mode}
+USER INTERESTS: {json.dumps(interests) if interests else "General assessment"}
 
-Best team partners: {', '.join(compatibility.get('best_partners', []))}
+IDEAL CREATIVE PARTNERS: {', '.join(archetype_data.get('ideal_partners', []))}
 
-Generate an engaging, personalized profile with four sections:
-1. Overview (a fun, detailed summary with emojis that reflects their specific trait scores)
-2. Team Work Style (how they function in a team based on their unique trait combination)
-3. Ideal Team Situation (the hackathon or project environment where they excel)
-4. Compatible Archetypes (use the compatibility data to explain WHY these archetypes work well together)
+Generate a personalized profile that:
+1. References their SPECIFIC trait levels (e.g., "Your high Openness at {normalized_scores.get('Openness', 50):.0f}%...")
+2. Feels like it was written specifically for them, not copy-pasted
+3. Uses the archetype's themes but personalizes based on their exact scores
+4. Is encouraging but honest about growth areas
 
-STRICT JSON RESPONSE FORMAT (MUST MATCH EXACTLY):
+STRICT JSON RESPONSE FORMAT:
 {output_schema}
 
-Important Constraints:
-- Reference their specific trait levels (e.g., "Your high Openness combined with moderate Extraversion...")
-- Make it personal and specific to their scores, not generic
-- NEVER include markdown formatting or commentary in your response
-- ALWAYS output strictly valid JSON exactly as defined above
-Return only the JSON object as specified.
+Return ONLY the JSON object, no markdown or commentary.
 """
-        logging.info("Sending prompt to GPT-4o for finalizing test results.")
+        logging.info("Sending prompt for finalizing test results.")
         final_response = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": "Return only the JSON object as specified."}
             ],
-            max_completion_tokens=4000,  # Increased for reasoning models - finalization needs more output
+            max_completion_tokens=4000,
             top_p=1.0,
             model=AZURE_OPENAI_MODEL_NAME,
-            reasoning_effort="medium"  # Medium reasoning for detailed personality analysis
+            reasoning_effort="medium"
         )
 
         raw_content = final_response.choices[0].message.content
@@ -840,55 +1017,70 @@ Return only the JSON object as specified.
             cleaned_json = raw_content.replace(
                 "```json", "").replace("```", "").strip()
             logging.debug("Cleaned JSON: %s", cleaned_json)
-            response_json = json.loads(cleaned_json)
-            required_keys = ["overview", "team_work_style",
-                             "ideal_team_situation", "compatible_archetypes"]
-            if not all(key in response_json for key in required_keys):
-                raise ValueError("Incomplete AI response format")
-
-            return {
-                "test_complete": True,
-                "final_scores": scores,
-                "normalized_scores": normalized_scores,
-                "suggested_archetype": archetype,
-                "archetype_confidence": confidence,
-                "trait_breakdown": trait_breakdown,
-                "all_matches": all_matches,
-                "archetype_description": response_json,
-                "compatibility": compatibility
-            }
+            personalized_profile = json.loads(cleaned_json)
         except (json.JSONDecodeError, ValueError) as json_err:
             logging.error(
-                "Error in finalizing test: %s. Falling back to default profile.", json_err)
-
-            # Generate fallback compatible archetypes from compatibility data
-            compatible_dict = {}
-            for partner in compatibility.get("best_partners", [])[:2]:
-                reason = compatibility.get("complementary_reason", {}).get(
-                    partner, "Great synergy")
-                compatible_dict[partner] = reason
-
-            fallback_profile = {
-                "overview": knowledge_base["archetypes"][archetype]["description"],
-                "team_work_style": "You bring a unique combination of traits to any team. Your personality profile suggests you can adapt to various team dynamics while maintaining your core strengths.",
-                "ideal_team_situation": "Your talents shine brightest in projects that leverage your specific trait combination, whether that's creative brainstorming, steady execution, or team coordination.",
-                "compatible_archetypes": compatible_dict if compatible_dict else {
-                    "Operator": "Brings structure and reliability",
-                    "Catalyst": "Energizes team collaboration"
+                "Error parsing GPT response: %s. Using fallback.", json_err)
+            # Fallback profile using archetype data
+            if mode == "hackathon":
+                personalized_profile = {
+                    "overview": archetype_data.get("description", "")[:200],
+                    "hackathon_style": raw_archetype.get("hackathon_superpower", "Bringing unique value to the team"),
+                    "team_role": archetype_data.get("team_value", "Contributing your unique strengths"),
+                    "watch_out_for": raw_archetype.get("hackathon_pitfall", "Staying balanced under pressure")
                 }
+            else:
+                personalized_profile = {
+                    "overview": archetype_data.get("description", ""),
+                    "strengths_in_action": archetype_data.get("zone_of_genius", ""),
+                    "growth_edge": archetype_data.get("growth_opportunity", ""),
+                    "ideal_environment": archetype_data.get("team_value", "")
+                }
+
+        # Build mode-specific insights
+        mode_specific = {}
+        if mode == "hackathon":
+            mode_specific = {
+                "hackathon_superpower": raw_archetype.get("hackathon_superpower", ""),
+                "hackathon_pitfall": raw_archetype.get("hackathon_pitfall", ""),
+                "team_value": archetype_data.get("team_value", "")
             }
-            return {
-                "test_complete": True,
-                "final_scores": scores,
-                "normalized_scores": normalized_scores,
-                "suggested_archetype": archetype,
-                "archetype_confidence": confidence,
-                "trait_breakdown": trait_breakdown,
-                "all_matches": all_matches,
-                "archetype_description": fallback_profile,
-                "compatibility": compatibility
+        elif mode == "interest" and interests:
+            mode_specific = {
+                "interests_assessed": interests,
+                "domain_insight": f"Your {archetype_name} traits shine through in {', '.join(interests[:2])}"
             }
-    except HTTPException as e:
+
+        return {
+            "test_complete": True,
+            "mode": mode,
+            "final_scores": scores,
+            "normalized_scores": normalized_scores,
+            "archetype": {
+                "name": archetype_name,
+                "tagline": archetype_data.get("tagline", ""),
+                "emoji": archetype_data.get("emoji", ""),
+                "color": archetype_data.get("color", "#6B7280"),
+                "description": archetype_data.get("description", ""),
+                "zone_of_genius": archetype_data.get("zone_of_genius", ""),
+                "deepest_aspiration": archetype_data.get("deepest_aspiration", ""),
+                "growth_opportunity": archetype_data.get("growth_opportunity", ""),
+                "creative_partner": archetype_data.get("creative_partner", ""),
+                "team_value": archetype_data.get("team_value", ""),
+                "ideal_partners": archetype_data.get("ideal_partners", []),
+                "growth_partners": archetype_data.get("growth_partners", [])
+            },
+            "archetype_confidence": confidence,
+            "trait_breakdown": trait_breakdown,
+            "all_matches": all_matches,
+            "personalized_profile": personalized_profile,
+            "mode_specific": mode_specific,
+            # Legacy fields for backwards compatibility
+            "suggested_archetype": archetype_name,
+            "archetype_description": personalized_profile,
+            "compatibility": compatibility
+        }
+    except Exception as e:
         logging.error("Error finalizing test: %s", e)
         return {"error": "Test finalization failed. Please try again."}
 

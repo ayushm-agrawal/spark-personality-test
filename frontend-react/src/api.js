@@ -6,7 +6,25 @@ export async function getAssessmentModes() {
   return response.json();
 }
 
-export async function startTest(mode = 'standard') {
+export async function getInterestCategories() {
+  const response = await fetch(`${API_BASE}/interest-categories/`);
+  if (!response.ok) throw new Error('Failed to fetch interest categories');
+  return response.json();
+}
+
+export async function getLifeContexts() {
+  const response = await fetch(`${API_BASE}/life-contexts/`);
+  if (!response.ok) throw new Error('Failed to fetch life contexts');
+  return response.json();
+}
+
+export async function getArchetypes() {
+  const response = await fetch(`${API_BASE}/archetypes/`);
+  if (!response.ok) throw new Error('Failed to fetch archetypes');
+  return response.json();
+}
+
+export async function startTest(mode = 'overall') {
   const response = await fetch(`${API_BASE}/start-test/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -18,6 +18,7 @@ function App() {
   const [sessionId, setSessionId] = useState(null);
   const [mode, setMode] = useState(null);
   const [modeConfig, setModeConfig] = useState(null);
+  const [interestConfig, setInterestConfig] = useState(null);
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [questionNumber, setQuestionNumber] = useState(0);
   const [results, setResults] = useState(null);
@@ -36,6 +37,7 @@ function App() {
           setSessionId(session.sessionId);
           setMode(session.mode);
           setModeConfig(session.modeConfig);
+          setInterestConfig(session.interestConfig);
           setStep(session.step || STEPS.INTERESTS);
           setQuestionNumber(session.questionNumber || 0);
         } else {
@@ -64,16 +66,41 @@ function App() {
       setSessionId(response.session_id);
       setMode(selectedMode);
       setModeConfig(response.mode_config);
-      setCurrentQuestion(response.next_question);
-      setStep(STEPS.INTERESTS);
+      setInterestConfig(response.interest_config || null);
 
-      saveSession({
-        sessionId: response.session_id,
-        mode: selectedMode,
-        modeConfig: response.mode_config,
-        step: STEPS.INTERESTS,
-        questionNumber: 0
-      });
+      // Handle UI flow based on backend response
+      const uiFlow = response.ui_flow || {};
+
+      if (uiFlow.proceed_directly_to_questions && response.next_question) {
+        // Hackathon mode - skip interests, go directly to questions
+        setCurrentQuestion(response.next_question);
+        setQuestionNumber(1);
+        setStep(STEPS.ASSESSMENT);
+
+        saveSession({
+          sessionId: response.session_id,
+          mode: selectedMode,
+          modeConfig: response.mode_config,
+          interestConfig: null,
+          step: STEPS.ASSESSMENT,
+          questionNumber: 1
+        });
+      } else if (uiFlow.show_interest_selection) {
+        // Show life context selection (overall or deep_dive mode)
+        setStep(STEPS.INTERESTS);
+
+        saveSession({
+          sessionId: response.session_id,
+          mode: selectedMode,
+          modeConfig: response.mode_config,
+          interestConfig: response.interest_config,
+          step: STEPS.INTERESTS,
+          questionNumber: 0
+        });
+      } else {
+        // Fallback - go to interests
+        setStep(STEPS.INTERESTS);
+      }
     } catch (err) {
       setError('Failed to start test. Please try again.');
       console.error(err);
@@ -97,6 +124,7 @@ function App() {
           sessionId,
           mode,
           modeConfig,
+          interestConfig,
           step: STEPS.ASSESSMENT,
           questionNumber: 1
         });
@@ -141,6 +169,7 @@ function App() {
           sessionId,
           mode,
           modeConfig,
+          interestConfig,
           step: STEPS.ASSESSMENT,
           questionNumber: questionNumber + 1
         });
@@ -161,9 +190,10 @@ function App() {
   };
 
   const handleFeedback = async (rating) => {
-    if (sessionId && results?.suggested_archetype) {
+    const archetype = results?.archetype?.name || results?.suggested_archetype;
+    if (sessionId && archetype) {
       try {
-        await api.submitFeedback(sessionId, rating, results.suggested_archetype);
+        await api.submitFeedback(sessionId, rating, archetype);
       } catch (err) {
         console.error('Failed to submit feedback:', err);
       }
@@ -176,6 +206,7 @@ function App() {
     setSessionId(null);
     setMode(null);
     setModeConfig(null);
+    setInterestConfig(null);
     setCurrentQuestion(null);
     setQuestionNumber(0);
     setResults(null);
@@ -255,6 +286,8 @@ function App() {
             <InterestSelection
               onSubmit={handleInterestsSubmit}
               isLoading={isLoading}
+              mode={mode}
+              config={interestConfig}
             />
           </motion.div>
         )}
@@ -273,6 +306,7 @@ function App() {
               onAnswer={handleAnswer}
               isLoading={isLoading}
               isAnalyzing={isAnalyzing}
+              mode={mode}
             />
           </motion.div>
         )}
@@ -282,15 +316,17 @@ function App() {
             key="results"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
+            className="bg-[#09090b]"
           >
             <Results
               results={results}
+              mode={mode}
               onFeedback={handleFeedback}
             />
-            <div className="text-center pb-8">
+            <div className="text-center pb-12 bg-[#09090b]">
               <button
                 onClick={resetTest}
-                className="px-6 py-3 rounded-xl bg-purple-600 text-white hover:bg-purple-500 transition-colors"
+                className="px-6 py-3 rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
               >
                 Take Another Test
               </button>
