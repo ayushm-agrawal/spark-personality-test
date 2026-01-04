@@ -285,21 +285,152 @@ def normalize_scores(raw_scores: dict, trait_counts: dict) -> dict:
         trait_counts: Dictionary of how many questions were asked per trait
 
     Returns:
-        Dictionary of normalized scores (0-100) per trait
+        Dictionary containing:
+        - Normalized scores (0-100) per trait
+        - 'low_confidence' flag if variance is too low
+        - 'variance' score
     """
     normalized = {}
     for trait, raw_score in raw_scores.items():
-        question_count = trait_counts.get(
-            trait, 2)  # Default to 2 if not tracked
+        question_count = trait_counts.get(trait, 0)
+
+        if question_count == 0:
+            # No questions asked for this trait - use neutral 50
+            normalized[trait] = 50
+            logging.warning(f"No questions asked for trait {trait}, defaulting to 50")
+            continue
+
         max_possible = question_count * 2  # Max 2 points per question
 
-        if max_possible > 0:
-            # Normalize to 0-100 scale
-            normalized[trait] = min(100, (raw_score / max_possible) * 100)
-        else:
-            normalized[trait] = 50  # Default to middle if no questions asked
+        # Handle edge case where raw_score exceeds max (shouldn't happen but be defensive)
+        if raw_score > max_possible:
+            logging.warning(f"Raw score {raw_score} exceeds max {max_possible} for {trait}, capping")
+            raw_score = max_possible
+
+        # Normalize to 0-100 scale, capped at 100
+        normalized[trait] = min(100, max(0, (raw_score / max_possible) * 100))
 
     return normalized
+
+
+def validate_llm_question(question: dict, target_trait: str, focused_traits: list) -> dict:
+    """
+    Validate that an LLM-generated question meets our requirements.
+
+    Args:
+        question: The generated question dict
+        target_trait: The trait we asked for
+        focused_traits: List of valid traits for this assessment
+
+    Returns:
+        Dict with 'valid' boolean and 'issues' list
+    """
+    issues = []
+
+    # Check trait matches what we asked for
+    question_trait = question.get("trait", "")
+    if question_trait != target_trait:
+        issues.append(f"Wrong trait: asked for {target_trait}, got {question_trait}")
+
+    # Check trait is in focused list
+    if focused_traits and question_trait not in focused_traits:
+        issues.append(f"Trait {question_trait} not in focused traits: {focused_traits}")
+
+    # Check options have proper score distribution for multiple-choice
+    if question.get("type") == "multiple-choice":
+        options = question.get("options", {})
+        if options:
+            scores = [opt.get("score", -1) for opt in options.values()]
+
+            # Check we have exactly scores 0, 1, 2
+            expected_scores = {0, 1, 2}
+            actual_scores = set(scores)
+
+            if actual_scores != expected_scores:
+                issues.append(f"Invalid score distribution: {scores}. Expected [0, 1, 2]")
+
+            # Check all scores are valid (0, 1, or 2)
+            for score in scores:
+                if score not in [0, 1, 2]:
+                    issues.append(f"Invalid score value: {score}")
+
+    # Check required fields
+    required_fields = ["id", "trait", "type", "text"]
+    for field in required_fields:
+        if not question.get(field):
+            issues.append(f"Missing required field: {field}")
+
+    return {
+        "valid": len(issues) == 0,
+        "issues": issues
+    }
+
+
+def fix_question_scores(question: dict) -> dict:
+    """
+    Attempt to fix invalid score distributions in a question.
+
+    If scores are like [2, 2, 1] or [1, 1, 0], remap them to [2, 1, 0].
+    """
+    if question.get("type") != "multiple-choice":
+        return question
+
+    options = question.get("options", {})
+    if not options:
+        return question
+
+    # Get current scores
+    option_keys = list(options.keys())
+    scores = [options[k].get("score", 0) for k in option_keys]
+
+    # If scores are already valid, return as-is
+    if set(scores) == {0, 1, 2}:
+        return question
+
+    # Sort options by score descending and reassign [2, 1, 0]
+    sorted_keys = sorted(option_keys, key=lambda k: options[k].get("score", 0), reverse=True)
+
+    fixed_scores = [2, 1, 0]
+    for i, key in enumerate(sorted_keys):
+        if i < len(fixed_scores):
+            options[key]["score"] = fixed_scores[i]
+
+    question["options"] = options
+    logging.info(f"Fixed question scores: original {scores} → [2, 1, 0]")
+
+    return question
+
+
+def check_score_confidence(normalized_scores: dict) -> dict:
+    """
+    Check if normalized scores have enough variance to be meaningful.
+
+    Args:
+        normalized_scores: Dictionary of normalized scores (0-100)
+
+    Returns:
+        Dictionary with confidence metrics
+    """
+    if not normalized_scores:
+        return {"low_confidence": True, "reason": "No scores", "variance": 0}
+
+    scores = list(normalized_scores.values())
+    mean_score = sum(scores) / len(scores)
+    variance = sum((s - mean_score) ** 2 for s in scores) / len(scores)
+    std_dev = math.sqrt(variance)
+
+    # Check if all scores are within 15 points of each other
+    score_range = max(scores) - min(scores)
+
+    low_confidence = score_range < 15 or std_dev < 10
+
+    return {
+        "low_confidence": low_confidence,
+        "variance": round(variance, 2),
+        "std_dev": round(std_dev, 2),
+        "range": round(score_range, 2),
+        "reason": "Scores too similar - results may not be reliable" if low_confidence else None
+    }
 
 
 def cosine_similarity(vec_a: dict, vec_b: dict) -> float:
@@ -330,6 +461,60 @@ def cosine_similarity(vec_a: dict, vec_b: dict) -> float:
     return dot_product / (magnitude_a * magnitude_b)
 
 
+def euclidean_similarity(vec_a: dict, vec_b: dict) -> float:
+    """
+    Calculate similarity based on Euclidean distance between two profiles.
+
+    Unlike cosine similarity (which measures angle), Euclidean distance
+    measures how CLOSE a user's profile is to each archetype. This penalizes
+    being far from an archetype's profile even if proportionally similar.
+
+    Args:
+        vec_a: First profile as {trait: score} dictionary (user's scores)
+        vec_b: Second profile as {trait: score} dictionary (archetype profile)
+
+    Returns:
+        Similarity score between 0 and 1 (higher = more similar)
+    """
+    # Get all traits that exist in both vectors
+    common_traits = set(vec_a.keys()) & set(vec_b.keys())
+
+    if not common_traits:
+        return 0.0
+
+    # Calculate Euclidean distance
+    squared_diff_sum = sum((vec_a[t] - vec_b[t]) ** 2 for t in common_traits)
+    distance = math.sqrt(squared_diff_sum)
+
+    # Convert distance to similarity score
+    # Max possible distance for 5 traits with 0-100 range: sqrt(5 * 100^2) ≈ 223.6
+    max_distance = math.sqrt(len(common_traits) * (100 ** 2))
+
+    # Normalize to 0-1 range (1 = identical, 0 = maximally different)
+    similarity = 1 - (distance / max_distance)
+
+    return max(0, similarity)
+
+
+def combined_similarity(vec_a: dict, vec_b: dict, cosine_weight: float = 0.4) -> float:
+    """
+    Calculate a combined similarity score using both cosine and Euclidean metrics.
+
+    Args:
+        vec_a: First profile as {trait: score} dictionary
+        vec_b: Second profile as {trait: score} dictionary
+        cosine_weight: Weight for cosine similarity (default 0.4, euclidean gets 0.6)
+
+    Returns:
+        Combined similarity score between 0 and 1
+    """
+    cosine_sim = cosine_similarity(vec_a, vec_b)
+    euclidean_sim = euclidean_similarity(vec_a, vec_b)
+
+    euclidean_weight = 1 - cosine_weight
+    return (cosine_sim * cosine_weight) + (euclidean_sim * euclidean_weight)
+
+
 def determine_archetype(scores: dict, trait_counts: dict = None) -> dict:
     """
     Determine the best matching personality archetype using cosine similarity.
@@ -358,10 +543,11 @@ def determine_archetype(scores: dict, trait_counts: dict = None) -> dict:
     # Normalize user scores to 0-100 scale
     normalized_scores = normalize_scores(scores, trait_counts)
 
-    # Calculate similarity to each archetype profile
+    # Calculate similarity to each archetype profile using combined metric
+    # (weighted average of cosine similarity and Euclidean similarity)
     archetype_similarities = {}
     for archetype, profile in ARCHETYPE_PROFILES.items():
-        similarity = cosine_similarity(normalized_scores, profile)
+        similarity = combined_similarity(normalized_scores, profile, cosine_weight=0.4)
         archetype_similarities[archetype] = similarity
 
     # Find the best matching archetype
@@ -402,13 +588,17 @@ def determine_archetype(scores: dict, trait_counts: dict = None) -> dict:
         reverse=True
     ))
 
+    # Check score confidence
+    score_confidence = check_score_confidence(normalized_scores)
+
     return {
         "archetype": best_archetype,
         "confidence": round(confidence, 1),
         "normalized_scores": {k: round(v, 1) for k, v in normalized_scores.items()},
         "all_matches": {k: round(v * 100, 1) for k, v in sorted_matches.items()},
         "trait_breakdown": trait_breakdown,
-        "compatibility": ARCHETYPE_COMPATIBILITY.get(best_archetype, {})
+        "compatibility": ARCHETYPE_COMPATIBILITY.get(best_archetype, {}),
+        "score_confidence": score_confidence
     }
 
 
@@ -442,13 +632,22 @@ def start_test(mode: str = "overall") -> dict:
     mode_config = get_mode_config(mode)
 
     session_id = str(uuid.uuid4())
-    trait_counts = {trait: 0 for trait in knowledge_base["traits"]}
+
+    # Determine which traits to assess based on mode
+    traits_focus = mode_config.get("traits_focus", ["all"])
+    if traits_focus == ["all"] or "all" in traits_focus:
+        focused_traits = knowledge_base["traits"]
+    else:
+        focused_traits = traits_focus
+
+    trait_counts = {trait: 0 for trait in focused_traits}
     session_data = {
         "start_time": time.time(),
         "responses": {},
         "interests": [],
-        "scores": {trait: 0 for trait in knowledge_base["traits"]},
+        "scores": {trait: 0 for trait in focused_traits},
         "trait_counts": trait_counts,
+        "focused_traits": focused_traits,  # Store for later use
         "paused": False,
         "optional_responses": {},
         "response_times": {},
@@ -460,7 +659,7 @@ def start_test(mode: str = "overall") -> dict:
         # New: Answer history for LLM context and pre-fetching
         "answer_history": [],
         # New: Structured trait scores for template
-        "trait_scores_detailed": {trait: {"total": 0, "count": 0} for trait in knowledge_base["traits"]},
+        "trait_scores_detailed": {trait: {"total": 0, "count": 0} for trait in focused_traits},
         # New: Predicted answers from LLM for pre-fetching
         "predicted_next_answer": None,
     }
@@ -593,13 +792,17 @@ def submit_response(user_response: UserResponse):
         current_question = session.get("current_question")
         trait = current_question.get("trait") if current_question else None
 
+        # Track the score added for this answer (used for both MC and freeform)
+        score_added_to_session = 0
+
         if current_question:
             selected_key = user_response.answer.strip().lower()
 
             if current_question["type"] == "multiple-choice":
                 option = current_question["options"].get(selected_key)
                 if option:
-                    session["scores"][trait] += option["score"]
+                    score_added_to_session = option["score"]
+                    session["scores"][trait] += score_added_to_session
 
             elif current_question["type"] == "optional-freeform":
                 eval_prompt = (
@@ -653,8 +856,12 @@ def submit_response(user_response: UserResponse):
                         raise ValueError(f"GPT returned empty response even on retry. Original filter: {content_filter}")
                 cleaned_eval = eval_content.strip().replace("```json", "").replace("```", "").strip()
                 eval_json = json.loads(cleaned_eval)
-                session["scores"][trait] += eval_json["score"]
+                # Scale freeform score (0-5) to match multiple-choice scale (0-2)
+                freeform_score = eval_json.get("score", 0)
+                score_added_to_session = (freeform_score / 5) * 2  # Convert 0-5 to 0-2
+                session["scores"][trait] += score_added_to_session
                 session["optional_responses"][user_response.question_id] = eval_json["reason"]
+                logging.debug(f"Freeform score: {freeform_score}/5 → scaled: {score_added_to_session:.2f}/2")
 
             # Update trait counts
             session["trait_counts"][trait] += 1
@@ -663,12 +870,8 @@ def submit_response(user_response: UserResponse):
             if "trait_scores_detailed" not in session:
                 session["trait_scores_detailed"] = {t: {"total": 0, "count": 0} for t in knowledge_base["traits"]}
 
-            score_added = 0
-            if current_question["type"] == "multiple-choice":
-                option = current_question["options"].get(selected_key)
-                if option:
-                    score_added = option.get("score", 0)
-            session["trait_scores_detailed"][trait]["total"] += score_added
+            # Use the score we already calculated above (works for both MC and freeform)
+            session["trait_scores_detailed"][trait]["total"] += score_added_to_session
             session["trait_scores_detailed"][trait]["count"] += 1
 
             # Add to answer history for LLM context
@@ -782,16 +985,18 @@ def generate_next_question(session_id: str) -> dict:
             return finalize_test(session_id)
 
         trait_counts = session.get("trait_counts", {})
+        focused_traits = session.get("focused_traits", list(trait_counts.keys()))
 
         # Calculate how many questions each trait should get based on mode
-        # Quick: 6 questions / 5 traits = ~1.2 questions per trait
+        # Hackathon: 6 questions / 3 traits = 2 questions per trait
         # Standard: 10 questions / 5 traits = 2 questions per trait
-        # Deep: 15 questions / 5 traits = 3 questions per trait
-        num_traits = len(trait_counts)
+        # Deep: 10 questions / 5 traits = 2 questions per trait
+        num_traits = len(focused_traits)
         questions_per_trait = max(1, question_count_target // num_traits)
 
-        trait_needs = {trait: questions_per_trait - count for trait,
-                       count in trait_counts.items()}
+        # Only consider focused traits when calculating needs
+        trait_needs = {trait: questions_per_trait - trait_counts.get(trait, 0)
+                       for trait in focused_traits}
         target_trait = max(trait_needs, key=trait_needs.get)
 
         # Freeform probability varies by mode
@@ -841,7 +1046,10 @@ def generate_next_question(session_id: str) -> dict:
             current_context=current_context,
             context_scenario_hooks=context_hooks,
             traits_assessed=traits_assessed,
-            inferred_tendencies=tendencies
+            inferred_tendencies=tendencies,
+            focused_traits=focused_traits,
+            questions_per_trait=questions_per_trait,
+            trait_needs=trait_needs
         )
         logging.info("Sending prompt to GPT for question generation.")
         response_gpt = client.chat.completions.create(
@@ -870,6 +1078,17 @@ def generate_next_question(session_id: str) -> dict:
             if not next_question:
                 logging.error("GPT response JSON missing 'next_question' key")
                 return {"error": "Invalid AI response format"}
+
+            # Validate the generated question
+            validation = validate_llm_question(next_question, target_trait, focused_traits)
+            if not validation["valid"]:
+                logging.warning(f"LLM question validation failed: {validation['issues']}")
+                # Attempt to fix score distribution
+                next_question = fix_question_scores(next_question)
+                # Force correct trait if wrong
+                if next_question.get("trait") != target_trait:
+                    logging.warning(f"Forcing trait from {next_question.get('trait')} to {target_trait}")
+                    next_question["trait"] = target_trait
 
             # Extract predicted_next_answer for pre-fetching (Phase 4)
             predicted_next = response_content.get("predicted_next_answer", {})
