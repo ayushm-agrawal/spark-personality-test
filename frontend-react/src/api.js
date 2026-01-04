@@ -1,4 +1,5 @@
-const API_BASE = '/api';
+// Use environment variable for API URL, fallback to /api for proxy setup
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 export async function getAssessmentModes() {
   const response = await fetch(`${API_BASE}/assessment-modes/`);
