@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ModeSelection from './components/ModeSelection';
 import InterestSelection from './components/InterestSelection';
 import Assessment from './components/Assessment';
 import Results from './components/Results';
+import GoogleSignInButton from './components/GoogleSignInButton';
+import ArchetypeGallery from './components/ArchetypeGallery';
+import { useAuth } from './contexts/AuthContext';
+import { saveAssessment, getUserAssessments, ensureUserProfile, assessmentToResults } from './services/assessmentHistory';
 import * as api from './api';
 
 const STEPS = {
@@ -25,6 +29,65 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState(null);
+
+  // Auth state
+  const { user, isAuthenticated } = useAuth();
+  const [userHistory, setUserHistory] = useState([]);
+  const [isViewingHistory, setIsViewingHistory] = useState(false);
+  const resultsSavedRef = useRef(false);
+
+  // Gallery state
+  const [showGallery, setShowGallery] = useState(false);
+
+  // Load user history when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      // Ensure user profile exists
+      ensureUserProfile(user).catch(console.error);
+      // Load assessment history
+      getUserAssessments(user.uid)
+        .then(setUserHistory)
+        .catch(console.error);
+    } else {
+      setUserHistory([]);
+    }
+  }, [isAuthenticated, user]);
+
+  // Auto-save results when test completes (if signed in)
+  useEffect(() => {
+    if (results?.test_complete && isAuthenticated && user && !resultsSavedRef.current && !isViewingHistory) {
+      resultsSavedRef.current = true;
+      saveAssessment(user.uid, results)
+        .then(() => getUserAssessments(user.uid))
+        .then(setUserHistory)
+        .catch(console.error);
+    }
+  }, [results, isAuthenticated, user, isViewingHistory]);
+
+  // Reset saved ref when starting new test
+  useEffect(() => {
+    if (step === STEPS.MODE) {
+      resultsSavedRef.current = false;
+      setIsViewingHistory(false);
+    }
+  }, [step]);
+
+  // Handle viewing historical result
+  const handleViewHistory = (assessment) => {
+    setIsViewingHistory(true);
+    setResults(assessmentToResults(assessment));
+    setMode(assessment.mode);
+    setStep(STEPS.RESULTS);
+  };
+
+  // Handle viewing archetype gallery
+  const handleViewGallery = () => {
+    setShowGallery(true);
+  };
+
+  const handleCloseGallery = () => {
+    setShowGallery(false);
+  };
 
   // Try to restore session from localStorage
   useEffect(() => {
@@ -216,6 +279,13 @@ function App() {
 
   return (
     <div className="min-h-screen">
+      {/* Google Sign In Button - only on MODE and RESULTS screens */}
+      {(step === STEPS.MODE || step === STEPS.RESULTS) && (
+        <div className="fixed top-4 right-4 z-50">
+          <GoogleSignInButton />
+        </div>
+      )}
+
       {/* Error toast */}
       <AnimatePresence>
         {error && (
@@ -272,7 +342,12 @@ function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, x: -100 }}
           >
-            <ModeSelection onSelectMode={handleModeSelect} />
+            <ModeSelection
+              onSelectMode={handleModeSelect}
+              userHistory={userHistory}
+              onViewHistory={handleViewHistory}
+              onViewGallery={handleViewGallery}
+            />
           </motion.div>
         )}
 
@@ -322,6 +397,8 @@ function App() {
               results={results}
               mode={mode}
               onFeedback={handleFeedback}
+              showSavePrompt={!isAuthenticated && !isViewingHistory}
+              onViewGallery={handleViewGallery}
             />
             <div className="text-center pb-12 bg-[#09090b]">
               <button
@@ -332,6 +409,16 @@ function App() {
               </button>
             </div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Archetype Gallery Modal */}
+      <AnimatePresence>
+        {showGallery && (
+          <ArchetypeGallery
+            onClose={handleCloseGallery}
+            userArchetype={results?.archetype?.name || userHistory[0]?.archetype?.name}
+          />
         )}
       </AnimatePresence>
     </div>

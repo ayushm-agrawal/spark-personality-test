@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import GoogleSignInButton from './GoogleSignInButton';
 
 // Trait configuration
 const traitConfig = [
@@ -461,7 +462,7 @@ function RadarChart({ traits, size = 160, color }) {
 }
 
 // Instagram Story Share Card Component (9:16 aspect ratio optimized)
-function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, onClose }) {
+function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, zoneOfGenius, onClose }) {
   const cardRef = useRef(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [cardReady, setCardReady] = useState(false);
@@ -612,23 +613,75 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, onClos
                 style={{
                   color: 'rgba(241, 245, 249, 0.8)',
                   textAlign: 'center',
-                  fontSize: '14px',
+                  fontSize: '13px',
                   fontStyle: 'italic',
-                  padding: '0 16px',
-                  lineHeight: '1.5',
+                  padding: '0 12px',
+                  lineHeight: '1.4',
                 }}
               >
                 "{teaser}"
               </p>
 
-              {/* Radar Chart */}
-              <div className="mt-2">
-                <RadarChart traits={traits} size={180} color={archetypeColor} />
+              {/* Zone of Genius */}
+              {zoneOfGenius && (
+                <div style={{ marginTop: '10px', padding: '0 12px', textAlign: 'center' }}>
+                  <p style={{
+                    color: 'rgba(241, 245, 249, 0.5)',
+                    fontSize: '9px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.12em',
+                    marginBottom: '3px',
+                  }}>
+                    Zone of Genius
+                  </p>
+                  <p style={{
+                    color: '#F1F5F9',
+                    fontSize: '11px',
+                    lineHeight: '1.4',
+                  }}>
+                    {zoneOfGenius}
+                  </p>
+                </div>
+              )}
+
+              {/* Top 3 Trait Scores */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '8px',
+                marginTop: '12px',
+              }}>
+                {[...traits]
+                  .sort((a, b) => b.value - a.value)
+                  .slice(0, 3)
+                  .map((trait) => (
+                    <div
+                      key={trait.name}
+                      style={{
+                        textAlign: 'center',
+                        padding: '6px 10px',
+                        borderRadius: '8px',
+                        backgroundColor: 'rgba(241, 245, 249, 0.08)',
+                      }}
+                    >
+                      <div style={{ color: trait.color, fontSize: '16px', fontWeight: '700' }}>
+                        {Math.round(trait.value)}%
+                      </div>
+                      <div style={{ color: 'rgba(241, 245, 249, 0.6)', fontSize: '9px' }}>
+                        {trait.full}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              {/* Radar Chart - smaller */}
+              <div className="mt-1">
+                <RadarChart traits={traits} size={140} color={archetypeColor} />
               </div>
             </div>
 
             {/* Social proof section */}
-            <div style={{ textAlign: 'center', paddingBottom: '8px' }}>
+            <div style={{ textAlign: 'center', paddingBottom: '16px' }}>
               {/* Rarity badge */}
               <div
                 style={{
@@ -652,23 +705,17 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, onClos
               <div
                 style={{
                   display: 'block',
-                  padding: '14px 24px',
-                  borderRadius: '12px',
-                  fontWeight: '700',
+                  padding: '10px 16px',
+                  borderRadius: '10px',
+                  fontWeight: '600',
                   color: 'white',
-                  fontSize: '18px',
+                  fontSize: '13px',
                   background: `linear-gradient(135deg, ${archetypeColor}, #38BDF8)`,
-                  marginBottom: '8px',
                   letterSpacing: '0.02em',
                 }}
               >
-                personality.ception.one
+                Find yours at personality.ception.one
               </div>
-
-              {/* Subtle instruction */}
-              <p style={{ color: 'rgba(241, 245, 249, 0.5)', fontSize: '11px', marginTop: '4px' }}>
-                Find your archetype
-              </p>
             </div>
           </div>
         </div>
@@ -715,7 +762,7 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, onClos
   );
 }
 
-export default function Results({ results, mode, onFeedback }) {
+export default function Results({ results, mode, onFeedback, showSavePrompt = false, onViewGallery }) {
   const [phase, setPhase] = useState('loading');
   const [showDetails, setShowDetails] = useState(false);
   const [rating, setRating] = useState(0);
@@ -1147,6 +1194,26 @@ export default function Results({ results, mode, onFeedback }) {
                       </motion.div>
                     )}
 
+                    {/* View All Archetypes Button */}
+                    {onViewGallery && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.7 }}
+                        className="text-center"
+                      >
+                        <button
+                          onClick={onViewGallery}
+                          className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-neutral-900/60 border border-neutral-700 text-neutral-300 hover:bg-neutral-800 hover:text-white hover:border-violet-500/50 transition-all"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                          </svg>
+                          Explore All 8 Archetypes
+                        </button>
+                      </motion.div>
+                    )}
+
                     {/* Feedback */}
                     <motion.div
                       initial={{ opacity: 0 }}
@@ -1163,27 +1230,51 @@ export default function Results({ results, mode, onFeedback }) {
                       )}
                     </motion.div>
 
-                    {/* Action buttons */}
+                    {/* Save Prompt for unauthenticated users */}
+                    {showSavePrompt && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 1 }}
+                        className="py-6 border-t border-neutral-800 flex flex-col items-center"
+                      >
+                        <p className="text-neutral-400 mb-4 text-sm text-center">
+                          Want to save your results and view them later?
+                        </p>
+                        <GoogleSignInButton variant="full" />
+                        <p className="text-neutral-600 text-xs mt-3 text-center">
+                          Sign in to save and track your personality over time
+                        </p>
+                      </motion.div>
+                    )}
+
+                    {/* Share CTA - prominent on mobile */}
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: 0.9 }}
-                      className="flex flex-col sm:flex-row gap-4 justify-center pt-6"
+                      className="mt-6 p-6 rounded-2xl bg-gradient-to-br from-neutral-900 to-neutral-800 border border-neutral-700"
                     >
+                      <p className="text-center text-neutral-300 text-sm mb-4">
+                        Share your archetype with friends
+                      </p>
                       <motion.button
                         whileHover={{ scale: 1.03 }}
                         whileTap={{ scale: 0.97 }}
                         onClick={() => setShowShareModal(true)}
-                        className="px-8 py-4 rounded-xl font-semibold text-white shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] flex items-center justify-center gap-3"
+                        className="w-full px-8 py-4 rounded-xl font-semibold text-white shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] flex items-center justify-center gap-3"
                         style={{
                           background: 'linear-gradient(135deg, #E1306C, #F77737, #FCAF45)',
                         }}
                       >
-                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
                           <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
                         </svg>
-                        Flex on the gram
+                        Share on Instagram
                       </motion.button>
+                      <p className="text-center text-neutral-500 text-xs mt-3">
+                        Create a story card to share your results
+                      </p>
                     </motion.div>
                   </motion.div>
                 )}
@@ -1201,6 +1292,7 @@ export default function Results({ results, mode, onFeedback }) {
             archetypeColor={archetypeColor}
             tagline={archetypeTagline}
             traits={traits}
+            zoneOfGenius={archetype?.zone_of_genius}
             onClose={() => setShowShareModal(false)}
           />
         )}
