@@ -137,7 +137,7 @@ const modes = [
   }
 ];
 
-export default function ModeSelection({ onSelectMode }) {
+export default function ModeSelection({ onSelectMode, userHistory = [], onViewHistory, onViewGallery }) {
   const [hoveredMode, setHoveredMode] = useState(null);
 
   // Keyboard navigation
@@ -336,6 +336,68 @@ export default function ModeSelection({ onSelectMode }) {
             ))}
           </div>
         </div>
+
+        {/* User History Section */}
+        {userHistory.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+            className="mt-6 md:mt-8 max-w-5xl mx-auto w-full"
+          >
+            <div className="flex items-center justify-between mb-3 md:mb-4">
+              <h3 className="text-neutral-400 text-xs md:text-sm text-center flex-1">
+                Your Previous Results
+              </h3>
+              {onViewGallery && (
+                <button
+                  onClick={onViewGallery}
+                  className="inline-flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  <span className="hidden md:inline">View All Archetypes</span>
+                  <span className="md:hidden">Archetypes</span>
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-3">
+              {userHistory.slice(0, 3).map((assessment) => (
+                <motion.button
+                  key={assessment.id}
+                  onClick={() => onViewHistory(assessment)}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-3 md:p-4 text-left hover:border-violet-400/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center text-lg md:text-xl"
+                      style={{ backgroundColor: `${assessment.archetype?.color || '#a78bfa'}20` }}
+                    >
+                      {assessment.archetype?.emoji || '🎭'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className="text-sm md:text-base font-semibold truncate"
+                        style={{ color: assessment.archetype?.color || '#a78bfa' }}
+                      >
+                        {assessment.archetype?.name || 'Unknown'}
+                      </div>
+                      <p className="text-neutral-500 text-[10px] md:text-xs">
+                        {assessment.mode} • {assessment.completedAt?.toLocaleDateString()}
+                      </p>
+                    </div>
+                    <svg className="w-4 h-4 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* Footer - hidden on mobile */}
         <motion.div
