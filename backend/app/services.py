@@ -728,7 +728,7 @@ def submit_response(user_response: UserResponse):
         if cached_question:
             logging.info("[PREFETCH] Using cached question - skipping LLM call!")
             # Store the cached question as current
-            session_doc.update({"current_question": cached_question})
+            session_ref.update({"current_question": cached_question})
             result = cached_question
         else:
             result = generate_next_question(user_response.session_id)
