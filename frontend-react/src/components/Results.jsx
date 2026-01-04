@@ -1,139 +1,230 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-const archetypeEmojis = {
-  Visionary: '🌟',
-  Operator: '⚙️',
-  Catalyst: '🤝',
-  Pragmatist: '🎯',
-  Explorer: '🗺️'
-};
+// Trait configuration
+const traitConfig = [
+  { name: 'O', full: 'Openness', color: '#fdba74' },
+  { name: 'C', full: 'Conscientiousness', color: '#c4b5fd' },
+  { name: 'E', full: 'Extraversion', color: '#67e8f9' },
+  { name: 'A', full: 'Agreeableness', color: '#86efac' },
+  { name: 'S', full: 'Stability', color: '#f9a8d4' },
+];
 
-const archetypeColors = {
-  Visionary: 'from-yellow-400 to-orange-500',
-  Operator: 'from-blue-400 to-cyan-500',
-  Catalyst: 'from-green-400 to-emerald-500',
-  Pragmatist: 'from-purple-400 to-indigo-500',
-  Explorer: 'from-pink-400 to-rose-500'
-};
-
-// Simple radar chart component
-function RadarChart({ scores }) {
-  const traits = Object.keys(scores);
-  const numTraits = traits.length;
-  const angleStep = (2 * Math.PI) / numTraits;
-  const centerX = 150;
-  const centerY = 150;
-  const maxRadius = 100;
-
-  // Calculate points for each trait
-  const points = traits.map((trait, i) => {
-    const angle = angleStep * i - Math.PI / 2; // Start from top
-    const value = scores[trait] / 100; // Normalize to 0-1
-    const r = value * maxRadius;
-    return {
-      x: centerX + r * Math.cos(angle),
-      y: centerY + r * Math.sin(angle),
-      label: trait.replace('_', ' '),
-      value: scores[trait],
-      labelX: centerX + (maxRadius + 40) * Math.cos(angle),
-      labelY: centerY + (maxRadius + 40) * Math.sin(angle)
-    };
-  });
-
-  // Create path for the polygon
-  const pathData = points.map((p, i) =>
-    `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
-  ).join(' ') + ' Z';
-
-  // Grid circles
-  const gridCircles = [0.25, 0.5, 0.75, 1].map(r => r * maxRadius);
+// Custom Archetype Symbol Component - unique symbol per archetype
+const ArchetypeSymbol = ({ archetype, size = 120, color = "#c4b5fd" }) => {
+  // Unique symbols for each archetype
+  const symbols = {
+    'The Architect': (
+      <>
+        {/* Blueprint/building structure */}
+        <motion.rect
+          x="35" y="50" width="20" height="35"
+          stroke={color} strokeWidth="2" fill={`${color}15`}
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.8 }}
+        />
+        <motion.rect
+          x="55" y="35" width="30" height="50"
+          stroke={color} strokeWidth="2" fill={`${color}20`}
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.8, delay: 0.2 }}
+        />
+        <motion.path
+          d="M35 50 L60 28 L85 50"
+          stroke={color} strokeWidth="2.5" fill="none"
+          strokeLinecap="round" strokeLinejoin="round"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.6, delay: 0.5 }}
+        />
+      </>
+    ),
+    'The Catalyst': (
+      <>
+        {/* Spark/explosion star */}
+        <motion.path
+          d="M60 15 L63 45 L90 40 L68 55 L85 80 L60 65 L35 80 L52 55 L30 40 L57 45 Z"
+          stroke={color} strokeWidth="2" fill={`${color}25`}
+          initial={{ scale: 0, rotate: -30 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ duration: 0.8, type: "spring" }}
+        />
+        <motion.circle
+          cx="60" cy="52" r="8"
+          fill={color}
+          initial={{ scale: 0 }}
+          animate={{ scale: [0, 1.3, 1] }}
+          transition={{ delay: 0.5, duration: 0.4 }}
+        />
+      </>
+    ),
+    'The Strategist': (
+      <>
+        {/* Chess knight / strategic mind */}
+        <motion.path
+          d="M45 85 L45 60 Q45 45 55 40 L55 35 Q65 35 65 45 L70 45 Q80 50 75 65 L75 85 Z"
+          stroke={color} strokeWidth="2" fill={`${color}20`}
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 1 }}
+        />
+        <motion.circle cx="58" cy="48" r="3" fill={color} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.8 }} />
+        {/* Grid lines suggesting planning */}
+        <motion.path d="M30 70 L90 70 M30 55 L90 55" stroke={color} strokeWidth="1" opacity="0.3" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: 0.5 }} />
+      </>
+    ),
+    'The Guide': (
+      <>
+        {/* Compass / guiding star */}
+        <motion.circle cx="60" cy="60" r="30" stroke={color} strokeWidth="2" fill="none" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.8 }} />
+        <motion.path d="M60 25 L65 55 L60 60 L55 55 Z" fill={color} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }} />
+        <motion.path d="M60 95 L55 65 L60 60 L65 65 Z" fill={`${color}60`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} />
+        <motion.path d="M25 60 L55 55 L60 60 L55 65 Z" fill={`${color}60`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} />
+        <motion.path d="M95 60 L65 65 L60 60 L65 55 Z" fill={`${color}60`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} />
+        <motion.circle cx="60" cy="60" r="5" fill={color} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.8 }} />
+      </>
+    ),
+    'The Alchemist': (
+      <>
+        {/* Flask / transformation symbol */}
+        <motion.path
+          d="M50 30 L50 50 L35 80 Q30 90 45 90 L75 90 Q90 90 85 80 L70 50 L70 30"
+          stroke={color} strokeWidth="2" fill={`${color}15`}
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 1 }}
+        />
+        <motion.path d="M48 30 L72 30" stroke={color} strokeWidth="3" strokeLinecap="round" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ delay: 0.3 }} />
+        {/* Bubbles */}
+        <motion.circle cx="50" cy="70" r="4" fill={color} opacity="0.6" initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 0.6 }} transition={{ delay: 0.8, duration: 0.5 }} />
+        <motion.circle cx="65" cy="75" r="3" fill={color} opacity="0.4" initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 0.4 }} transition={{ delay: 1, duration: 0.5 }} />
+        <motion.circle cx="55" cy="65" r="2" fill={color} opacity="0.5" initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 0.5 }} transition={{ delay: 1.1, duration: 0.5 }} />
+      </>
+    ),
+    'The Gardener': (
+      <>
+        {/* Growing plant / nurturing */}
+        <motion.path
+          d="M60 90 L60 50"
+          stroke={color} strokeWidth="3" strokeLinecap="round"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.6 }}
+        />
+        {/* Leaves */}
+        <motion.path d="M60 70 Q45 60 50 45 Q60 55 60 70" fill={color} opacity="0.7" initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.4, type: "spring" }} />
+        <motion.path d="M60 60 Q75 50 70 35 Q60 45 60 60" fill={color} opacity="0.5" initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.6, type: "spring" }} />
+        <motion.path d="M60 50 Q40 45 45 30 Q55 40 60 50" fill={color} opacity="0.6" initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.8, type: "spring" }} />
+        {/* Ground */}
+        <motion.ellipse cx="60" cy="92" rx="20" ry="5" fill={`${color}30`} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.2 }} />
+      </>
+    ),
+    'The Luminary': (
+      <>
+        {/* Beacon with emanating rays - illumination */}
+        <motion.circle
+          cx="60" cy="60" r="15"
+          fill={color}
+          initial={{ scale: 0 }}
+          animate={{ scale: [0, 1.2, 1] }}
+          transition={{ duration: 0.6 }}
+        />
+        <motion.circle
+          cx="60" cy="60" r="22"
+          stroke={color} strokeWidth="2" fill="none" opacity="0.5"
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ delay: 0.3 }}
+        />
+        {/* Rays emanating outward */}
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => {
+          const rad = (angle * Math.PI) / 180;
+          const x1 = 60 + 28 * Math.cos(rad);
+          const y1 = 60 + 28 * Math.sin(rad);
+          const x2 = 60 + 45 * Math.cos(rad);
+          const y2 = 60 + 45 * Math.sin(rad);
+          return (
+            <motion.line
+              key={angle}
+              x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={color}
+              strokeWidth={i % 2 === 0 ? "3" : "2"}
+              strokeLinecap="round"
+              opacity={i % 2 === 0 ? 0.9 : 0.5}
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: i % 2 === 0 ? 0.9 : 0.5 }}
+              transition={{ delay: 0.5 + i * 0.05, duration: 0.3 }}
+            />
+          );
+        })}
+      </>
+    ),
+    'The Sentinel': (
+      <>
+        {/* Shield / guardian */}
+        <motion.path
+          d="M60 25 L85 35 L85 60 Q85 85 60 95 Q35 85 35 60 L35 35 Z"
+          stroke={color} strokeWidth="2.5" fill={`${color}20`}
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 1 }}
+        />
+        {/* Inner emblem */}
+        <motion.path
+          d="M60 45 L70 55 L70 70 L60 80 L50 70 L50 55 Z"
+          stroke={color} strokeWidth="2" fill={`${color}40`}
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ delay: 0.6, type: "spring" }}
+        />
+        <motion.circle cx="60" cy="60" r="5" fill={color} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.9 }} />
+      </>
+    ),
+    'default': (
+      <>
+        {/* Fallback: abstract personality symbol */}
+        <motion.circle
+          cx="60" cy="60" r="30"
+          stroke={color} strokeWidth="2" fill={`${color}15`}
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 1 }}
+        />
+        <motion.circle
+          cx="60" cy="60" r="18"
+          stroke={color} strokeWidth="1.5" fill="none" opacity="0.6"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 0.8, delay: 0.3 }}
+        />
+        <motion.circle
+          cx="60" cy="60" r="8"
+          fill={color}
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ delay: 0.8, type: "spring" }}
+        />
+      </>
+    )
+  };
 
   return (
-    <svg viewBox="0 0 300 300" className="w-full max-w-xs mx-auto">
-      {/* Grid circles */}
-      {gridCircles.map((r, i) => (
-        <circle
-          key={i}
-          cx={centerX}
-          cy={centerY}
-          r={r}
-          fill="none"
-          stroke="rgba(255,255,255,0.1)"
-          strokeWidth="1"
-        />
-      ))}
-
-      {/* Grid lines */}
-      {traits.map((_, i) => {
-        const angle = angleStep * i - Math.PI / 2;
-        return (
-          <line
-            key={i}
-            x1={centerX}
-            y1={centerY}
-            x2={centerX + maxRadius * Math.cos(angle)}
-            y2={centerY + maxRadius * Math.sin(angle)}
-            stroke="rgba(255,255,255,0.1)"
-            strokeWidth="1"
-          />
-        );
-      })}
-
-      {/* Data polygon */}
-      <motion.path
-        d={pathData}
-        fill="rgba(139, 92, 246, 0.3)"
-        stroke="rgb(139, 92, 246)"
-        strokeWidth="2"
-        initial={{ opacity: 0, scale: 0.5 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.8, delay: 0.3 }}
-      />
-
-      {/* Data points */}
-      {points.map((p, i) => (
-        <motion.circle
-          key={i}
-          cx={p.x}
-          cy={p.y}
-          r="5"
-          fill="rgb(139, 92, 246)"
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.3, delay: 0.5 + i * 0.1 }}
-        />
-      ))}
-
-      {/* Labels */}
-      {points.map((p, i) => (
-        <text
-          key={i}
-          x={p.labelX}
-          y={p.labelY}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill="rgba(255,255,255,0.7)"
-          fontSize="10"
-          className="font-medium"
-        >
-          {p.label}
-        </text>
-      ))}
+    <svg width={size} height={size} viewBox="0 0 120 120" fill="none">
+      {symbols[archetype] || symbols['default']}
     </svg>
   );
-}
+};
 
 function StarRating({ rating, onRate }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex justify-center gap-2">
       {[1, 2, 3, 4, 5].map((star) => (
         <button
           key={star}
           onClick={() => onRate(star)}
-          className={`text-3xl transition-transform hover:scale-110 ${
-            star <= rating ? 'text-yellow-400' : 'text-gray-600'
-          }`}
+          className={`text-3xl transition-transform hover:scale-110 ${star <= rating ? 'text-yellow-400' : 'text-neutral-600'}`}
         >
           ★
         </button>
@@ -142,27 +233,535 @@ function StarRating({ rating, onRate }) {
   );
 }
 
-export default function Results({ results, onFeedback }) {
+// Archetype rarity percentages (for social proof)
+const archetypeRarity = {
+  'The Architect': 8,
+  'The Catalyst': 11,
+  'The Strategist': 9,
+  'The Guide': 14,
+  'The Alchemist': 7,
+  'The Gardener': 16,
+  'The Luminary': 12,
+  'The Sentinel': 15,
+};
+
+// Archetype teaser lines (curiosity gap - intriguing but incomplete)
+const archetypeTeasers = {
+  'The Architect': "Builds systems others can't imagine...",
+  'The Catalyst': "Sparks change wherever they go...",
+  'The Strategist': "Sees ten moves ahead...",
+  'The Guide': "Lights the path for others...",
+  'The Alchemist': "Transforms chaos into gold...",
+  'The Gardener': "Nurtures what others overlook...",
+  'The Luminary': "Illuminates hidden possibilities...",
+  'The Sentinel': "Guards what truly matters...",
+};
+
+// Static Archetype Symbol for Instagram Story (no animations for html2canvas)
+const ArchetypeSymbolStatic = ({ archetype, size = 90, color = "#c4b5fd" }) => {
+  const symbols = {
+    'The Architect': (
+      <>
+        <rect x="35" y="50" width="20" height="35" stroke={color} strokeWidth="2" fill={`${color}15`} />
+        <rect x="55" y="35" width="30" height="50" stroke={color} strokeWidth="2" fill={`${color}20`} />
+        <path d="M35 50 L60 28 L85 50" stroke={color} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </>
+    ),
+    'The Catalyst': (
+      <>
+        <path d="M60 15 L63 45 L90 40 L68 55 L85 80 L60 65 L35 80 L52 55 L30 40 L57 45 Z" stroke={color} strokeWidth="2" fill={`${color}25`} />
+        <circle cx="60" cy="52" r="8" fill={color} />
+      </>
+    ),
+    'The Strategist': (
+      <>
+        <path d="M45 85 L45 60 Q45 45 55 40 L55 35 Q65 35 65 45 L70 45 Q80 50 75 65 L75 85 Z" stroke={color} strokeWidth="2" fill={`${color}20`} />
+        <circle cx="58" cy="48" r="3" fill={color} />
+        <path d="M30 70 L90 70 M30 55 L90 55" stroke={color} strokeWidth="1" opacity="0.3" />
+      </>
+    ),
+    'The Guide': (
+      <>
+        <circle cx="60" cy="60" r="30" stroke={color} strokeWidth="2" fill="none" />
+        <path d="M60 25 L65 55 L60 60 L55 55 Z" fill={color} />
+        <path d="M60 95 L55 65 L60 60 L65 65 Z" fill={`${color}60`} />
+        <path d="M25 60 L55 55 L60 60 L55 65 Z" fill={`${color}60`} />
+        <path d="M95 60 L65 65 L60 60 L65 55 Z" fill={`${color}60`} />
+        <circle cx="60" cy="60" r="5" fill={color} />
+      </>
+    ),
+    'The Alchemist': (
+      <>
+        <path d="M50 30 L50 50 L35 80 Q30 90 45 90 L75 90 Q90 90 85 80 L70 50 L70 30" stroke={color} strokeWidth="2" fill={`${color}15`} />
+        <path d="M48 30 L72 30" stroke={color} strokeWidth="3" strokeLinecap="round" />
+        <circle cx="50" cy="70" r="4" fill={color} opacity="0.6" />
+        <circle cx="65" cy="75" r="3" fill={color} opacity="0.4" />
+        <circle cx="55" cy="65" r="2" fill={color} opacity="0.5" />
+      </>
+    ),
+    'The Gardener': (
+      <>
+        <path d="M60 90 L60 50" stroke={color} strokeWidth="3" strokeLinecap="round" />
+        <path d="M60 70 Q45 60 50 45 Q60 55 60 70" fill={color} opacity="0.7" />
+        <path d="M60 60 Q75 50 70 35 Q60 45 60 60" fill={color} opacity="0.5" />
+        <path d="M60 50 Q40 45 45 30 Q55 40 60 50" fill={color} opacity="0.6" />
+        <ellipse cx="60" cy="92" rx="20" ry="5" fill={`${color}30`} />
+      </>
+    ),
+    'The Luminary': (
+      <>
+        <circle cx="60" cy="60" r="15" fill={color} />
+        <circle cx="60" cy="60" r="22" stroke={color} strokeWidth="2" fill="none" opacity="0.5" />
+        {/* Rays */}
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => {
+          const rad = (angle * Math.PI) / 180;
+          const x1 = 60 + 28 * Math.cos(rad);
+          const y1 = 60 + 28 * Math.sin(rad);
+          const x2 = 60 + 45 * Math.cos(rad);
+          const y2 = 60 + 45 * Math.sin(rad);
+          return (
+            <line key={angle} x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={i % 2 === 0 ? "3" : "2"} strokeLinecap="round" opacity={i % 2 === 0 ? 0.9 : 0.5} />
+          );
+        })}
+      </>
+    ),
+    'The Sentinel': (
+      <>
+        <path d="M60 25 L85 35 L85 60 Q85 85 60 95 Q35 85 35 60 L35 35 Z" stroke={color} strokeWidth="2.5" fill={`${color}20`} />
+        <path d="M60 45 L70 55 L70 70 L60 80 L50 70 L50 55 Z" stroke={color} strokeWidth="2" fill={`${color}40`} />
+        <circle cx="60" cy="60" r="5" fill={color} />
+      </>
+    ),
+    'default': (
+      <>
+        <circle cx="60" cy="60" r="30" stroke={color} strokeWidth="2" fill={`${color}15`} />
+        <circle cx="60" cy="60" r="18" stroke={color} strokeWidth="1.5" fill="none" opacity="0.6" />
+        <circle cx="60" cy="60" r="8" fill={color} />
+      </>
+    )
+  };
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 120 120" fill="none">
+      {symbols[archetype] || symbols['default']}
+    </svg>
+  );
+};
+
+// Short descriptive labels for radar chart
+const traitShortLabels = {
+  'O': 'Open',
+  'C': 'Focus',
+  'E': 'Social',
+  'A': 'Warm',
+  'S': 'Calm',
+};
+
+// Radar chart component for Instagram story
+function RadarChart({ traits, size = 160, color }) {
+  const centerX = size / 2;
+  const centerY = size / 2;
+  const radius = size * 0.28; // Smaller to fit labels with padding
+
+  // Calculate points for pentagon
+  const getPoint = (index, value) => {
+    const angle = (Math.PI * 2 * index) / 5 - Math.PI / 2;
+    const r = (value / 100) * radius;
+    return {
+      x: centerX + r * Math.cos(angle),
+      y: centerY + r * Math.sin(angle),
+    };
+  };
+
+  // Create path for trait values
+  const points = traits.map((trait, i) => getPoint(i, trait.value));
+  const pathD = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
+
+  // Create grid lines
+  const gridLevels = [25, 50, 75, 100];
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {/* Grid lines */}
+      {gridLevels.map((level) => {
+        const gridPoints = [0, 1, 2, 3, 4].map(i => getPoint(i, level));
+        const gridPath = gridPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z';
+        return (
+          <path
+            key={level}
+            d={gridPath}
+            fill="none"
+            stroke="#F1F5F9"
+            strokeWidth="0.5"
+            opacity="0.1"
+          />
+        );
+      })}
+
+      {/* Axis lines */}
+      {[0, 1, 2, 3, 4].map(i => {
+        const endPoint = getPoint(i, 100);
+        return (
+          <line
+            key={i}
+            x1={centerX}
+            y1={centerY}
+            x2={endPoint.x}
+            y2={endPoint.y}
+            stroke="#F1F5F9"
+            strokeWidth="0.5"
+            opacity="0.1"
+          />
+        );
+      })}
+
+      {/* Filled area */}
+      <path
+        d={pathD}
+        fill={color}
+        fillOpacity="0.3"
+        stroke={color}
+        strokeWidth="2"
+      />
+
+      {/* Data points - match archetype color for cohesive branding */}
+      {points.map((p, i) => (
+        <circle
+          key={i}
+          cx={p.x}
+          cy={p.y}
+          r="4"
+          fill={color}
+          opacity={0.7 + (i * 0.075)}
+        />
+      ))}
+
+      {/* Labels - descriptive short words */}
+      {traits.map((trait, i) => {
+        const labelPoint = getPoint(i, 135);
+        const label = traitShortLabels[trait.name] || trait.name;
+        return (
+          <text
+            key={i}
+            x={labelPoint.x}
+            y={labelPoint.y}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill={trait.color}
+            fontSize="9"
+            fontWeight="600"
+            style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}
+          >
+            {label}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+// Instagram Story Share Card Component (9:16 aspect ratio optimized)
+function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, onClose }) {
+  const cardRef = useRef(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [cardReady, setCardReady] = useState(false);
+
+  const rarity = archetypeRarity[archetype] || 10;
+  const teaser = archetypeTeasers[archetype] || tagline;
+
+  useEffect(() => {
+    // Small delay to ensure component is mounted
+    const timer = setTimeout(() => setCardReady(true), 300);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleDownload = async () => {
+    if (!cardRef.current) return;
+    setIsGenerating(true);
+
+    try {
+      // Dynamic import html2canvas
+      const html2canvas = (await import('html2canvas')).default;
+
+      const canvas = await html2canvas(cardRef.current, {
+        scale: 3, // Higher quality for Instagram
+        backgroundColor: '#0F172A',
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        removeContainer: false,
+        // Handle modern color functions that html2canvas doesn't support
+        onclone: (clonedDoc, element) => {
+          // Convert any oklab/oklch colors to hex by forcing computed styles
+          const allElements = element.querySelectorAll('*');
+          allElements.forEach((el) => {
+            const computed = window.getComputedStyle(el);
+            // Force color to be applied as inline style with hex fallback
+            if (computed.color) {
+              el.style.color = computed.color;
+            }
+            if (computed.backgroundColor && computed.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+              el.style.backgroundColor = computed.backgroundColor;
+            }
+          });
+        },
+      });
+
+      // Convert to blob and download
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = `my-archetype-${archetype.replace(/\s+/g, '-').toLowerCase()}.png`;
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }
+        setIsGenerating(false);
+      }, 'image/png', 1.0);
+    } catch (error) {
+      console.error('Failed to generate image:', error);
+      setIsGenerating(false);
+      // Fallback: copy text to clipboard
+      const text = `I'm ${archetype}! "${teaser}" - Only ${rarity}% get this result. Discover yours at ception.one`;
+      navigator.clipboard.writeText(text);
+      alert('Image saved! If download failed, the text was copied to your clipboard.');
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.9, opacity: 0 }}
+        className="relative max-w-xs w-full my-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute -top-10 right-0 text-white/60 hover:text-white p-2 z-10"
+        >
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        {/* The actual card - 9:16 aspect ratio - STATIC for html2canvas */}
+        <div
+          ref={cardRef}
+          className="relative w-full overflow-hidden rounded-2xl"
+          style={{
+            aspectRatio: '9/16',
+            background: '#0F172A',
+          }}
+        >
+          {/* Gradient background - static */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: `
+                radial-gradient(ellipse at 50% 20%, ${archetypeColor}40 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, #38BDF820 0%, transparent 40%),
+                radial-gradient(ellipse at 20% 70%, #FF6F6120 0%, transparent 40%)
+              `,
+            }}
+          />
+
+          {/* Content container */}
+          <div className="relative z-10 h-full flex flex-col px-5 py-5">
+            {/* Top section - moved higher with more space */}
+            <div className="text-center mb-3">
+              <p style={{ color: 'rgba(241, 245, 249, 0.6)', fontSize: '13px', letterSpacing: '0.08em', fontWeight: '500' }}>
+                just discovered i'm...
+              </p>
+            </div>
+
+            {/* Hero section */}
+            <div className="flex-1 flex flex-col items-center justify-center" style={{ marginTop: '-8px' }}>
+              {/* Archetype-specific symbol */}
+              <div className="relative mb-3">
+                <ArchetypeSymbolStatic archetype={archetype} size={90} color={archetypeColor} />
+              </div>
+
+              {/* Archetype name */}
+              <h1
+                style={{
+                  fontSize: '28px',
+                  fontWeight: '900',
+                  textAlign: 'center',
+                  letterSpacing: '-0.02em',
+                  marginBottom: '8px',
+                  color: archetypeColor,
+                }}
+              >
+                {archetype.toUpperCase()}
+              </h1>
+
+              {/* Teaser line */}
+              <p
+                style={{
+                  color: 'rgba(241, 245, 249, 0.8)',
+                  textAlign: 'center',
+                  fontSize: '14px',
+                  fontStyle: 'italic',
+                  padding: '0 16px',
+                  lineHeight: '1.5',
+                }}
+              >
+                "{teaser}"
+              </p>
+
+              {/* Radar Chart */}
+              <div className="mt-2">
+                <RadarChart traits={traits} size={180} color={archetypeColor} />
+              </div>
+            </div>
+
+            {/* Social proof section */}
+            <div style={{ textAlign: 'center', paddingBottom: '8px' }}>
+              {/* Rarity badge */}
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  borderRadius: '999px',
+                  backgroundColor: 'rgba(241, 245, 249, 0.1)',
+                  border: '1px solid rgba(241, 245, 249, 0.2)',
+                  marginBottom: '16px',
+                }}
+              >
+                <span style={{ color: '#FDE047', fontSize: '12px' }}>✦</span>
+                <span style={{ color: '#F1F5F9', fontSize: '12px', fontWeight: '500' }}>
+                  Only {rarity}% get this result
+                </span>
+              </div>
+
+              {/* URL CTA - prominent so viewers know where to go */}
+              <div
+                style={{
+                  display: 'block',
+                  padding: '14px 24px',
+                  borderRadius: '12px',
+                  fontWeight: '700',
+                  color: 'white',
+                  fontSize: '18px',
+                  background: `linear-gradient(135deg, ${archetypeColor}, #38BDF8)`,
+                  marginBottom: '8px',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                ception.one/personality
+              </div>
+
+              {/* Subtle instruction */}
+              <p style={{ color: 'rgba(241, 245, 249, 0.5)', fontSize: '11px', marginTop: '4px' }}>
+                Find your archetype
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="mt-4 flex gap-3">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleDownload}
+            disabled={isGenerating || !cardReady}
+            className="flex-1 py-3 px-4 rounded-xl font-medium text-white flex items-center justify-center gap-2 disabled:opacity-50"
+            style={{
+              background: 'linear-gradient(135deg, #E1306C, #F77737)',
+            }}
+          >
+            {isGenerating ? (
+              <>
+                <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Creating...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                </svg>
+                Save for Stories
+              </>
+            )}
+          </motion.button>
+        </div>
+
+        <p className="text-center text-[#F1F5F9]/40 text-xs mt-3">
+          Save image, then share to your Instagram Story
+        </p>
+        <p className="text-center text-[#F1F5F9]/30 text-xs mt-1">
+          Tip: Add a link sticker to ception.one
+        </p>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+export default function Results({ results, mode, onFeedback }) {
+  const [phase, setPhase] = useState('loading');
+  const [showDetails, setShowDetails] = useState(false);
   const [rating, setRating] = useState(0);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+
+  useEffect(() => {
+    if (results) {
+      // Phased reveal animation
+      const timer1 = setTimeout(() => setPhase('reveal'), 1500);
+      const timer2 = setTimeout(() => setPhase('complete'), 3000);
+      const timer3 = setTimeout(() => setShowDetails(true), 4000);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+      };
+    }
+  }, [results]);
 
   if (!results) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-12 w-12 border-4 border-purple-500 border-t-transparent rounded-full" />
+      <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
+        <div className="animate-spin h-12 w-12 border-4 border-violet-500 border-t-transparent rounded-full" />
       </div>
     );
   }
 
-  const {
-    suggested_archetype: archetype,
-    archetype_confidence: confidence,
-    normalized_scores: scores,
-    trait_breakdown: traitBreakdown,
-    all_matches: allMatches,
-    archetype_description: description,
-    compatibility
-  } = results;
+  // Support both new and legacy response formats
+  const archetype = results.archetype || {};
+  const archetypeName = archetype.name || results.suggested_archetype;
+  const archetypeEmoji = archetype.emoji || '✨';
+  const archetypeColor = archetype.color || '#a78bfa';
+  const archetypeTagline = archetype.tagline || '';
+  const confidence = results.archetype_confidence;
+  const scores = results.normalized_scores;
+  const traitBreakdown = results.trait_breakdown;
+  const allMatches = results.all_matches;
+  const personalizedProfile = results.personalized_profile || results.archetype_description || {};
+  const modeSpecific = results.mode_specific || {};
+
+  // Build traits array from scores
+  const traits = scores ? traitConfig.map(t => ({
+    ...t,
+    value: scores[t.full] || scores[t.full.replace(' ', '_')] || 50
+  })) : [];
 
   const handleRate = async (stars) => {
     setRating(stars);
@@ -173,211 +772,439 @@ export default function Results({ results, onFeedback }) {
   };
 
   return (
-    <div className="min-h-screen px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Archetype reveal */}
+    <div
+      className="min-h-screen text-white overflow-x-hidden relative"
+      style={{ background: '#09090b' }}
+    >
+      {/* Background */}
+      <div className="absolute inset-0 overflow-hidden">
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-12"
-        >
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.3, type: 'spring', stiffness: 200 }}
-            className={`w-24 h-24 mx-auto mb-6 rounded-2xl bg-gradient-to-br ${archetypeColors[archetype] || 'from-purple-500 to-pink-500'} flex items-center justify-center text-5xl`}
-          >
-            {archetypeEmojis[archetype] || '✨'}
-          </motion.div>
+          className="absolute inset-0"
+          animate={{
+            background: phase === 'complete'
+              ? `radial-gradient(ellipse at 50% 30%, ${archetypeColor}30 0%, transparent 60%)`
+              : `radial-gradient(ellipse at 50% 50%, ${archetypeColor}15 0%, transparent 50%)`
+          }}
+          transition={{ duration: 2 }}
+        />
+      </div>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="text-4xl md:text-5xl font-bold mb-3 gradient-text"
-          >
-            You're a {archetype}!
-          </motion.h1>
-
-          {confidence !== undefined && (
-            <motion.p
+      <div className="relative z-10 min-h-screen flex flex-col items-center justify-center px-6 py-12">
+        <AnimatePresence mode="wait">
+          {/* Loading Phase */}
+          {phase === 'loading' && (
+            <motion.div
+              key="loading"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 0.7 }}
-              className="text-gray-400"
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="text-center"
             >
-              {confidence > 70 ? 'Strong match' : confidence > 40 ? 'Good match' : 'Emerging profile'} ({Math.round(confidence)}% confidence)
-            </motion.p>
+              <motion.div
+                className="w-20 h-20 mx-auto mb-8 rounded-full border-2 border-neutral-700 border-t-violet-400 relative"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              />
+
+              <p className="text-neutral-300 text-lg mb-4">
+                Calculating your archetype...
+              </p>
+
+              <div className="flex justify-center gap-2">
+                {traitConfig.map((trait, i) => (
+                  <motion.span
+                    key={trait.name}
+                    className="text-xs px-2 py-1 rounded border border-neutral-700 text-neutral-500"
+                    style={{ backgroundColor: `${trait.color}10` }}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 + i * 0.15 }}
+                  >
+                    {trait.name}
+                  </motion.span>
+                ))}
+              </div>
+            </motion.div>
           )}
-        </motion.div>
 
-        {/* Trait radar chart */}
-        {scores && (
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
-            className="glass-card p-6 mb-8"
-          >
-            <h2 className="text-xl font-semibold text-white mb-4 text-center">Your Trait Profile</h2>
-            <RadarChart scores={scores} />
-
-            {/* Trait breakdown */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-6">
-              {traitBreakdown && Object.entries(traitBreakdown).map(([trait, data]) => (
-                <div key={trait} className="text-center p-3 rounded-lg bg-white/5">
-                  <p className="text-xs text-gray-400 mb-1">{trait.replace('_', ' ')}</p>
-                  <p className="text-lg font-semibold text-white">{Math.round(data.score)}</p>
-                  <p className="text-xs text-purple-400">{data.level}</p>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Description sections */}
-        {description && (
-          <div className="space-y-6 mb-8">
-            {description.overview && (
+          {/* Reveal Phase */}
+          {phase === 'reveal' && (
+            <motion.div
+              key="reveal"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-center"
+            >
               <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 1 }}
-                className="glass-card p-6"
+                initial={{ scale: 0, rotate: -180 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
+                className="mb-6"
               >
-                <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                  ✨ Overview
-                </h3>
-                <p className="text-gray-300 leading-relaxed">{description.overview}</p>
+                <ArchetypeSymbol archetype={archetypeName} size={140} color={archetypeColor} />
               </motion.div>
-            )}
 
-            {description.team_work_style && (
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 1.1 }}
-                className="glass-card p-6"
+              <motion.h1
+                className="text-5xl md:text-7xl font-bold"
+                style={{ color: archetypeColor }}
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
               >
-                <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                  🤝 How You Work in Teams
-                </h3>
-                <p className="text-gray-300 leading-relaxed">{description.team_work_style}</p>
-              </motion.div>
-            )}
+                {archetypeName}
+              </motion.h1>
+            </motion.div>
+          )}
 
-            {description.ideal_team_situation && (
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 1.2 }}
-                className="glass-card p-6"
-              >
-                <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                  🚀 Where You Excel
-                </h3>
-                <p className="text-gray-300 leading-relaxed">{description.ideal_team_situation}</p>
-              </motion.div>
-            )}
+          {/* Complete Phase */}
+          {phase === 'complete' && (
+            <motion.div
+              key="complete"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="w-full max-w-4xl"
+            >
+              {/* Hero */}
+              <div className="text-center mb-10">
+                <motion.div
+                  className="mb-6"
+                  animate={{ y: [0, -8, 0] }}
+                  transition={{ duration: 4, repeat: Infinity }}
+                >
+                  <ArchetypeSymbol archetype={archetypeName} size={100} color={archetypeColor} />
+                </motion.div>
 
-            {description.compatible_archetypes && (
+                <h1
+                  className="text-5xl md:text-6xl font-bold mb-3"
+                  style={{ color: archetypeColor }}
+                >
+                  {archetypeName}
+                </h1>
+
+                {archetypeTagline && (
+                  <p className="text-xl text-neutral-300 italic">
+                    "{archetypeTagline}"
+                  </p>
+                )}
+
+                {confidence !== undefined && (
+                  <p className="text-neutral-500 mt-2">
+                    {confidence > 70 ? 'Strong match' : confidence > 40 ? 'Good match' : 'Emerging profile'} • {Math.round(confidence)}% confidence
+                  </p>
+                )}
+              </div>
+
+              {/* Trait circles - grid on mobile, flex row on desktop */}
               <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 1.3 }}
-                className="glass-card p-6"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="w-full mb-10"
               >
-                <h3 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                  💫 Best Team Partners
-                </h3>
-                {typeof description.compatible_archetypes === 'object' ? (
-                  <div className="space-y-3">
-                    {Object.entries(description.compatible_archetypes).map(([arch, reason]) => (
-                      <div key={arch} className="flex items-start gap-3">
-                        <span className="text-2xl">{archetypeEmojis[arch] || '✨'}</span>
-                        <div>
-                          <p className="font-medium text-white">{arch}</p>
-                          <p className="text-gray-400 text-sm">{reason}</p>
+                {/* Mobile: 3+2 grid layout */}
+                <div className="grid grid-cols-3 gap-4 md:hidden">
+                  {traits.slice(0, 3).map((trait, i) => (
+                    <motion.div
+                      key={trait.name}
+                      initial={{ opacity: 0, scale: 0 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.4 + i * 0.1 }}
+                      className="flex flex-col items-center"
+                    >
+                      <div className="relative w-14 h-14 mb-2">
+                        <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+                          <circle cx="28" cy="28" r="24" fill="none" stroke="#262626" strokeWidth="4" />
+                          <motion.circle
+                            cx="28" cy="28" r="24" fill="none" stroke={trait.color} strokeWidth="4"
+                            strokeLinecap="round" strokeDasharray={2 * Math.PI * 24}
+                            initial={{ strokeDashoffset: 2 * Math.PI * 24 }}
+                            animate={{ strokeDashoffset: 2 * Math.PI * 24 * (1 - trait.value / 100) }}
+                            transition={{ delay: 0.6 + i * 0.1, duration: 1, ease: "easeOut" }}
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-sm font-bold text-white">{Math.round(trait.value)}</span>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-300">{description.compatible_archetypes}</p>
-                )}
-              </motion.div>
-            )}
-          </div>
-        )}
-
-        {/* All archetype matches */}
-        {allMatches && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.4 }}
-            className="glass-card p-6 mb-8"
-          >
-            <h3 className="text-lg font-semibold text-white mb-4">All Archetype Matches</h3>
-            <div className="space-y-3">
-              {Object.entries(allMatches).map(([arch, score], index) => (
-                <div key={arch} className="flex items-center gap-3">
-                  <span className="text-xl w-8">{archetypeEmojis[arch] || '✨'}</span>
-                  <span className="w-24 text-gray-300">{arch}</span>
-                  <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                    <motion.div
-                      className={`h-full ${index === 0 ? 'bg-purple-500' : 'bg-gray-500'}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${score}%` }}
-                      transition={{ delay: 1.5 + index * 0.1, duration: 0.5 }}
-                    />
-                  </div>
-                  <span className="text-gray-400 w-12 text-right">{Math.round(score)}%</span>
+                      <span className="text-[10px] text-neutral-400 text-center">{trait.full}</span>
+                    </motion.div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
+                <div className="grid grid-cols-2 gap-4 mt-4 max-w-[200px] mx-auto md:hidden">
+                  {traits.slice(3).map((trait, i) => (
+                    <motion.div
+                      key={trait.name}
+                      initial={{ opacity: 0, scale: 0 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.7 + i * 0.1 }}
+                      className="flex flex-col items-center"
+                    >
+                      <div className="relative w-14 h-14 mb-2">
+                        <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+                          <circle cx="28" cy="28" r="24" fill="none" stroke="#262626" strokeWidth="4" />
+                          <motion.circle
+                            cx="28" cy="28" r="24" fill="none" stroke={trait.color} strokeWidth="4"
+                            strokeLinecap="round" strokeDasharray={2 * Math.PI * 24}
+                            initial={{ strokeDashoffset: 2 * Math.PI * 24 }}
+                            animate={{ strokeDashoffset: 2 * Math.PI * 24 * (1 - trait.value / 100) }}
+                            transition={{ delay: 0.9 + i * 0.1, duration: 1, ease: "easeOut" }}
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-sm font-bold text-white">{Math.round(trait.value)}</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-neutral-400 text-center">{trait.full}</span>
+                    </motion.div>
+                  ))}
+                </div>
 
-        {/* Feedback */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.6 }}
-          className="text-center py-8"
-        >
-          <p className="text-gray-400 mb-4">How was your experience?</p>
-          <StarRating rating={rating} onRate={handleRate} />
-          {feedbackSubmitted && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-green-400 mt-3"
-            >
-              Thanks for your feedback!
-            </motion.p>
+                {/* Desktop: single row */}
+                <div className="hidden md:flex justify-center gap-6">
+                  {traits.map((trait, i) => (
+                    <motion.div
+                      key={trait.name}
+                      initial={{ opacity: 0, scale: 0 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.4 + i * 0.1 }}
+                      className="flex flex-col items-center"
+                    >
+                      <div className="relative w-14 h-14 mb-2">
+                        <svg className="w-14 h-14 -rotate-90" viewBox="0 0 56 56">
+                          <circle cx="28" cy="28" r="24" fill="none" stroke="#262626" strokeWidth="4" />
+                          <motion.circle
+                            cx="28" cy="28" r="24" fill="none" stroke={trait.color} strokeWidth="4"
+                            strokeLinecap="round" strokeDasharray={2 * Math.PI * 24}
+                            initial={{ strokeDashoffset: 2 * Math.PI * 24 }}
+                            animate={{ strokeDashoffset: 2 * Math.PI * 24 * (1 - trait.value / 100) }}
+                            transition={{ delay: 0.6 + i * 0.1, duration: 1, ease: "easeOut" }}
+                          />
+                        </svg>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-sm font-bold text-white">{Math.round(trait.value)}</span>
+                        </div>
+                      </div>
+                      <span className="text-xs text-neutral-400">{trait.full}</span>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+
+              {/* Details */}
+              <AnimatePresence>
+                {showDetails && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-5"
+                  >
+                    {/* Description */}
+                    {(personalizedProfile.overview || archetype.description) && (
+                      <div className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-6">
+                        <p className="text-lg text-neutral-200 leading-relaxed">
+                          {personalizedProfile.overview || archetype.description}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Insight cards */}
+                    <div className="grid md:grid-cols-3 gap-4">
+                      {archetype.zone_of_genius && (
+                        <motion.div
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.1 }}
+                          className="bg-neutral-900/60 border rounded-xl p-5"
+                          style={{ borderColor: `${archetypeColor}40` }}
+                        >
+                          <div className="text-sm mb-2 font-medium" style={{ color: archetypeColor }}>Zone of Genius</div>
+                          <p className="text-neutral-100">{archetype.zone_of_genius}</p>
+                        </motion.div>
+                      )}
+
+                      {archetype.deepest_aspiration && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.2 }}
+                          className="bg-neutral-900/60 border border-orange-500/30 rounded-xl p-5"
+                        >
+                          <div className="text-orange-300 text-sm mb-2 font-medium">Deepest Aspiration</div>
+                          <p className="text-neutral-100">{archetype.deepest_aspiration}</p>
+                        </motion.div>
+                      )}
+
+                      {archetype.growth_opportunity && (
+                        <motion.div
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.3 }}
+                          className="bg-neutral-900/60 border border-cyan-500/30 rounded-xl p-5"
+                        >
+                          <div className="text-cyan-300 text-sm mb-2 font-medium">Growth Edge</div>
+                          <p className="text-neutral-100">{archetype.growth_opportunity}</p>
+                        </motion.div>
+                      )}
+                    </div>
+
+                    {/* Hackathon insights */}
+                    {mode === 'hackathon' && (modeSpecific.hackathon_superpower || archetype.team_value) && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4 }}
+                        className="bg-neutral-900/60 border border-neutral-700 rounded-2xl p-6"
+                      >
+                        <div className="flex items-center gap-2 mb-5">
+                          <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                              <path d="M8 2 L9 7 L14 7 L10 10 L11 15 L8 12 L5 15 L6 10 L2 7 L7 7 Z"
+                                stroke="#fdba74" strokeWidth="1.5" fill="none" />
+                            </svg>
+                          </div>
+                          <h3 className="text-lg font-semibold text-neutral-100">In a Hackathon...</h3>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-5">
+                          <div>
+                            <p className="text-neutral-500 text-sm mb-1">Team Role</p>
+                            <p className="text-xl font-medium text-white">{archetype.team_value || modeSpecific.team_value}</p>
+                          </div>
+                          {modeSpecific.hackathon_superpower && (
+                            <div>
+                              <p className="text-neutral-500 text-sm mb-1">Your Superpower</p>
+                              <p className="text-xl font-medium text-white">{modeSpecific.hackathon_superpower}</p>
+                            </div>
+                          )}
+                          {modeSpecific.hackathon_pitfall && (
+                            <div>
+                              <p className="text-neutral-500 text-sm mb-1">Watch Out For</p>
+                              <p className="text-neutral-200">{modeSpecific.hackathon_pitfall}</p>
+                            </div>
+                          )}
+                          {archetype.ideal_partners?.length > 0 && (
+                            <div>
+                              <p className="text-neutral-500 text-sm mb-1">Dream Team</p>
+                              <div className="flex gap-2 flex-wrap">
+                                {archetype.ideal_partners.map((mate) => (
+                                  <span
+                                    key={mate}
+                                    className="px-3 py-1 bg-neutral-800 border border-neutral-700 rounded-full text-sm text-neutral-200"
+                                  >
+                                    {mate}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* Creative partner */}
+                    {archetype.creative_partner && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.5 }}
+                        className="text-center py-6"
+                      >
+                        <p className="text-neutral-500 mb-2">Your creative partner archetype</p>
+                        <p className="text-2xl font-bold text-emerald-300">
+                          {archetype.creative_partner}
+                        </p>
+                        <p className="text-neutral-500 text-sm mt-2">Find them. Build together.</p>
+                      </motion.div>
+                    )}
+
+                    {/* All archetype matches */}
+                    {allMatches && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6 }}
+                        className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-6"
+                      >
+                        <h3 className="text-lg font-semibold text-white mb-4">All Archetype Matches</h3>
+                        <div className="space-y-3">
+                          {Object.entries(allMatches).map(([arch, score], index) => (
+                            <div key={arch} className="flex items-center gap-3">
+                              <span className="w-28 text-neutral-300 text-sm truncate">{arch}</span>
+                              <div className="flex-1 h-2 bg-neutral-700 rounded-full overflow-hidden">
+                                <motion.div
+                                  className="h-full rounded-full"
+                                  style={{ backgroundColor: index === 0 ? archetypeColor : '#6B7280' }}
+                                  initial={{ width: 0 }}
+                                  animate={{ width: `${score}%` }}
+                                  transition={{ delay: 0.7 + index * 0.1, duration: 0.5 }}
+                                />
+                              </div>
+                              <span className="text-neutral-400 w-12 text-right text-sm">{Math.round(score)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+
+                    {/* Feedback */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: 0.8 }}
+                      className="text-center py-8"
+                    >
+                      <p className="text-neutral-400 mb-4">How was your experience?</p>
+                      <StarRating rating={rating} onRate={handleRate} />
+                      {feedbackSubmitted && (
+                        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-green-400 mt-3">
+                          Thanks for your feedback!
+                        </motion.p>
+                      )}
+                    </motion.div>
+
+                    {/* Action buttons */}
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.9 }}
+                      className="flex flex-col sm:flex-row gap-4 justify-center pt-6"
+                    >
+                      <motion.button
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => setShowShareModal(true)}
+                        className="px-8 py-4 rounded-xl font-semibold text-white shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] flex items-center justify-center gap-3"
+                        style={{
+                          background: 'linear-gradient(135deg, #E1306C, #F77737, #FCAF45)',
+                        }}
+                      >
+                        <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                        </svg>
+                        Flex on the gram
+                      </motion.button>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
           )}
-        </motion.div>
-
-        {/* Share button */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.8 }}
-          className="text-center pb-8"
-        >
-          <button
-            onClick={() => {
-              const text = `I'm a ${archetype}! ${archetypeEmojis[archetype]} Discover your team archetype at Ception`;
-              navigator.clipboard.writeText(text);
-            }}
-            className="px-6 py-3 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors"
-          >
-            📋 Copy to Share
-          </button>
-        </motion.div>
+        </AnimatePresence>
       </div>
+
+      {/* Instagram Share Modal */}
+      <AnimatePresence>
+        {showShareModal && (
+          <InstagramStoryCard
+            archetype={archetypeName}
+            archetypeColor={archetypeColor}
+            tagline={archetypeTagline}
+            traits={traits}
+            onClose={() => setShowShareModal(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
