@@ -6,8 +6,12 @@ It imports service functions (start_test, submit_response, continue_test, get_re
 select_interests) and uses Pydantic models (UserResponse, InterestSelection) for request validation.
 """
 
+from typing import Optional
 from fastapi import APIRouter
-from services import start_test, submit_response, continue_test, get_results, select_interests, store_feedback
+from services import (
+    start_test, submit_response, continue_test, get_results,
+    select_interests, store_feedback, ASSESSMENT_MODES, ARCHETYPE_COMPATIBILITY
+)
 from models import UserResponse, InterestSelection, FeedbackResponse
 from pydantic import BaseModel
 
@@ -24,15 +28,52 @@ class SessionRequest(BaseModel):
     session_id: str
 
 
-@router.post("/start-test/")
-async def start():
+class StartTestRequest(BaseModel):
     """
-    Initiates a new test session.
+    Request model for starting a new test session.
+
+    Attributes:
+        mode (str): The assessment mode - 'quick', 'standard', or 'deep'.
+                    Defaults to 'standard'.
+    """
+    mode: Optional[str] = "standard"
+
+
+@router.get("/assessment-modes/")
+async def get_assessment_modes():
+    """
+    Returns available assessment modes and their configurations.
 
     Returns:
-        dict: A dictionary containing the new session ID and the first question.
+        dict: A dictionary containing all available assessment modes.
     """
-    return start_test()
+    return {"modes": ASSESSMENT_MODES}
+
+
+@router.get("/archetype-compatibility/")
+async def get_archetype_compatibility():
+    """
+    Returns the archetype compatibility mapping.
+
+    Returns:
+        dict: A dictionary containing compatibility information for all archetypes.
+    """
+    return {"compatibility": ARCHETYPE_COMPATIBILITY}
+
+
+@router.post("/start-test/")
+async def start(request: Optional[StartTestRequest] = None):
+    """
+    Initiates a new test session with the specified assessment mode.
+
+    Args:
+        request (StartTestRequest): Optional request containing the mode.
+
+    Returns:
+        dict: A dictionary containing the new session ID, mode info, and the first question.
+    """
+    mode = request.mode if request else "standard"
+    return start_test(mode=mode)
 
 
 @router.post("/select-interests/")
