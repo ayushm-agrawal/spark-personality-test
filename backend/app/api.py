@@ -562,5 +562,105 @@ async def get_profile_view(profile_id: str):
         "tests_excluded": excluded_tests,
         "member_since": profile.get("created_at"),
         "last_updated": profile.get("updated_at"),
-        "current_archetype": profile.get("current_archetype")  # Most recent
+        "current_archetype": profile.get("current_archetype"),  # Most recent
+        "username": profile.get("username"),
+        "display_name": profile.get("display_name")
     }
+
+
+# ============================================================================
+# USERNAME ENDPOINTS
+# ============================================================================
+
+class CheckUsernameRequest(BaseModel):
+    username: str
+
+
+class SetUsernameRequest(BaseModel):
+    profile_id: str
+    username: str
+    display_name: Optional[str] = None
+
+
+@router.post("/check-username/")
+async def check_username(request: CheckUsernameRequest):
+    """
+    Check if a username is available.
+
+    Args:
+        request: CheckUsernameRequest with username to check
+
+    Returns:
+        dict: {"available": bool, "username": str}
+    """
+    from services import is_username_available
+
+    username = request.username.lower().strip()
+    available = is_username_available(username)
+
+    return {
+        "available": available,
+        "username": username
+    }
+
+
+@router.post("/set-username/")
+async def set_username_endpoint(request: SetUsernameRequest):
+    """
+    Set or update username for a profile.
+
+    Args:
+        request: SetUsernameRequest with profile_id, username, and optional display_name
+
+    Returns:
+        dict: {"success": bool, "username": str} or {"success": false, "error": str}
+    """
+    from services import set_username
+
+    result = set_username(
+        profile_id=request.profile_id,
+        username=request.username,
+        display_name=request.display_name
+    )
+
+    return result
+
+
+@router.post("/generate-username/")
+async def generate_username_endpoint(request: dict):
+    """
+    Generate a unique username from a display name.
+
+    Args:
+        request: {"display_name": str}
+
+    Returns:
+        dict: {"username": str}
+    """
+    from services import generate_unique_username
+
+    display_name = request.get("display_name", "")
+    username = generate_unique_username(display_name)
+
+    return {"username": username}
+
+
+@router.get("/u/{username}")
+async def get_public_profile(username: str):
+    """
+    Get a public profile by username.
+
+    Args:
+        username: The username to look up
+
+    Returns:
+        dict: Public profile data or {"error": "Profile not found"}
+    """
+    from services import get_profile_by_username
+
+    profile = get_profile_by_username(username)
+
+    if not profile:
+        return {"error": "Profile not found"}
+
+    return profile

@@ -1359,7 +1359,7 @@ export default function Results({ results, mode, interest, onFeedback, showSaveP
                       )}
                     </div>
 
-                    {/* Hackathon insights */}
+                    {/* Team Crunch / under pressure insights */}
                     {mode === 'hackathon' && (modeSpecific.hackathon_superpower || archetype.team_value) && (
                       <motion.div
                         initial={{ opacity: 0, y: 20 }}
@@ -1374,7 +1374,7 @@ export default function Results({ results, mode, interest, onFeedback, showSaveP
                                 stroke="#fdba74" strokeWidth="1.5" fill="none" />
                             </svg>
                           </div>
-                          <h3 className="text-lg font-semibold text-neutral-100">In a Hackathon...</h3>
+                          <h3 className="text-lg font-semibold text-neutral-100">Under Pressure...</h3>
                         </div>
 
                         <div className="grid md:grid-cols-2 gap-5">
@@ -1390,7 +1390,7 @@ export default function Results({ results, mode, interest, onFeedback, showSaveP
                           )}
                           {modeSpecific.hackathon_pitfall && (
                             <div>
-                              <p className="text-neutral-500 text-sm mb-1">Watch Out For</p>
+                              <p className="text-neutral-500 text-sm mb-1">Pressure Point</p>
                               <p className="text-neutral-200">{modeSpecific.hackathon_pitfall}</p>
                             </div>
                           )}
