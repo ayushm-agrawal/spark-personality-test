@@ -48,13 +48,29 @@ export async function profileModeToResults(modeData, mode, interest = null) {
   const normalizedScores = {};
   if (modeData.weighted_scores) {
     Object.entries(modeData.weighted_scores).forEach(([trait, data]) => {
-      // weighted_scores has structure: { trait: { total_weight, weighted_sum } }
-      if (data && typeof data === 'object' && data.total_weight > 0) {
-        normalizedScores[trait] = (data.weighted_sum / data.total_weight) * 100;
+      // weighted_scores has structure: { trait: { weight_total, weighted_sum } }
+      // weighted_sum already contains values weighted by 0-100 scores
+      if (data && typeof data === 'object' && data.weight_total > 0) {
+        normalizedScores[trait] = data.weighted_sum / data.weight_total;
       } else if (typeof data === 'number') {
         normalizedScores[trait] = data;
       }
     });
+  }
+
+  // Also handle "Emotional_Stability" -> "Stability" mapping for frontend
+  if (normalizedScores.Emotional_Stability && !normalizedScores.Stability) {
+    normalizedScores.Stability = normalizedScores.Emotional_Stability;
+  }
+
+  // If no weighted scores, use archetype's default profile
+  if (Object.keys(normalizedScores).length === 0 && archetypeDetails?.big_five_profile) {
+    Object.entries(archetypeDetails.big_five_profile).forEach(([trait, value]) => {
+      normalizedScores[trait] = value;
+    });
+    if (normalizedScores.Emotional_Stability && !normalizedScores.Stability) {
+      normalizedScores.Stability = normalizedScores.Emotional_Stability;
+    }
   }
 
   // Build the results object
