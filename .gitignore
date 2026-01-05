@@ -1,14 +1,33 @@
+# Credentials and secrets
 serviceAccountKey.json
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+pyvenv.cfg
+
+# Old/deprecated
 ptest/
 bin/
 include/
 lib/
-.env
-pyvenv.cfg
-
-__pycache__
 upload_traits.py
+
+# Node/Frontend
+node_modules/
+dist/
+.vercel/
 
 # macOS
 .DS_Store
 **/.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
