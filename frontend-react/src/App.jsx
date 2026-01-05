@@ -611,7 +611,10 @@ function App() {
 
       {/* Google Sign In Button - only on MODE and RESULTS screens */}
       {(step === STEPS.MODE || step === STEPS.RESULTS) && (
-        <div className={`fixed top-4 right-4 z-[101] ${highlightSignIn ? 'animate-pulse' : ''}`}>
+        <div
+          className={`fixed right-4 z-[101] ${highlightSignIn ? 'animate-pulse' : ''}`}
+          style={{ top: 'max(1rem, env(safe-area-inset-top, 1rem))' }}
+        >
           {/* Highlight ring for tutorial */}
           {highlightSignIn && (
             <div className="absolute -inset-2 rounded-full border-2 border-violet-500 animate-ping opacity-75" />
