@@ -39,8 +39,8 @@ function StabilityBadge({ stability, size = 'sm' }) {
   );
 }
 
-// Individual archetype card
-function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, color, onClick }) {
+// Individual archetype card (non-clickable summary card for holistic profiles)
+function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, color }) {
   const isDeepDive = mode === 'deep_dive';
   const config = isDeepDive ? null : modeConfig[mode];
 
@@ -53,11 +53,8 @@ function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, co
   const displayColor = color || config?.color || '#a78bfa';
 
   return (
-    <motion.button
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
-      onClick={onClick}
-      className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl p-4 text-left hover:border-violet-400/50 transition-colors"
+    <div
+      className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl p-4 text-left"
     >
       <div className="flex items-center gap-3">
         {/* Icon */}
@@ -84,13 +81,8 @@ function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, co
             {testsIncluded} test{testsIncluded !== 1 ? 's' : ''}
           </p>
         </div>
-
-        {/* Arrow */}
-        <svg className="w-4 h-4 text-neutral-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
       </div>
-    </motion.button>
+    </div>
   );
 }
 
@@ -213,7 +205,6 @@ export default function YourArchetypes({
                 archetype={data.current_archetype}
                 testsIncluded={data.tests_included || 0}
                 stability={data.stability}
-                onClick={() => onViewArchetype?.({ mode, ...data })}
               />
             ))}
 
@@ -227,7 +218,6 @@ export default function YourArchetypes({
                 testsIncluded={data.tests_included || 1}
                 stability={data.stability}
                 color="#2dd4bf"
-                onClick={() => onViewArchetype?.({ mode: 'deep_dive', interest, ...data })}
               />
             ))}
           </>
