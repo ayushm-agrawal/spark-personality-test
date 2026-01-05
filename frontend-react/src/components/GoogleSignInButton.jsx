@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -12,10 +12,30 @@ const GoogleLogo = ({ className = "w-4 h-4" }) => (
   </svg>
 );
 
-export default function GoogleSignInButton({ variant = 'icon', onViewProfile = null, showProfileBadge = false }) {
+export default function GoogleSignInButton({ variant = 'icon', onViewProfile = null, showProfileBadge = false, showSignInPrompt = false }) {
   const { signInWithGoogle, isAuthenticated, user, logout, loading } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [showPromptTooltip, setShowPromptTooltip] = useState(false);
+  const [promptDismissed, setPromptDismissed] = useState(false);
+
+  // Show sign-in prompt tooltip immediately for non-authenticated users
+  useEffect(() => {
+    if (showSignInPrompt && !isAuthenticated && !promptDismissed) {
+      setShowPromptTooltip(true);
+    }
+  }, [showSignInPrompt, isAuthenticated, promptDismissed]);
+
+  // Auto-dismiss tooltip after showing
+  useEffect(() => {
+    if (showPromptTooltip) {
+      const timer = setTimeout(() => {
+        setShowPromptTooltip(false);
+        setPromptDismissed(true);
+      }, 12000); // Hide after 12 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [showPromptTooltip]);
 
   const handleSignIn = async () => {
     setIsSigningIn(true);
@@ -167,23 +187,58 @@ export default function GoogleSignInButton({ variant = 'icon', onViewProfile = n
   // Not authenticated - show sign in button
   if (variant === 'icon') {
     return (
-      <motion.button
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        onClick={handleSignIn}
-        disabled={isSigningIn}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-800/80 border border-neutral-700 hover:border-violet-400 transition-colors disabled:opacity-50"
-        title="Sign in with Google"
-      >
-        {isSigningIn ? (
-          <div className="w-4 h-4 border-2 border-neutral-500 border-t-white rounded-full animate-spin" />
-        ) : (
-          <>
-            <GoogleLogo className="w-4 h-4" />
-            <span className="text-sm text-neutral-300">Sign in</span>
-          </>
-        )}
-      </motion.button>
+      <div className="relative">
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => {
+            setShowPromptTooltip(false);
+            setPromptDismissed(true);
+            handleSignIn();
+          }}
+          disabled={isSigningIn}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-800/80 border border-neutral-700 hover:border-violet-400 transition-colors disabled:opacity-50"
+          title="Sign in with Google"
+        >
+          {isSigningIn ? (
+            <div className="w-4 h-4 border-2 border-neutral-500 border-t-white rounded-full animate-spin" />
+          ) : (
+            <>
+              <GoogleLogo className="w-4 h-4" />
+              <span className="text-sm text-neutral-300">Sign in</span>
+            </>
+          )}
+        </motion.button>
+
+        {/* Sign-in prompt tooltip */}
+        <AnimatePresence>
+          {showPromptTooltip && (
+            <motion.div
+              initial={{ opacity: 0, y: 5, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 5, scale: 0.95 }}
+              className="absolute right-0 top-12 z-50 w-64 p-3 bg-gradient-to-br from-violet-600 to-violet-700 text-white text-sm rounded-xl shadow-xl"
+            >
+              <div className="absolute -top-2 right-6 w-4 h-4 bg-violet-600 rotate-45"></div>
+              <button
+                onClick={() => {
+                  setShowPromptTooltip(false);
+                  setPromptDismissed(true);
+                }}
+                className="absolute top-2 right-2 text-white/60 hover:text-white transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <p className="font-medium mb-1">Build your personality profile</p>
+              <p className="text-white/80 text-xs leading-relaxed">
+                Sign in to discover your archetype across different life areas and get deeper actionable insights.
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     );
   }
 

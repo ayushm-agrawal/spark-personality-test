@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ModeSelection from './components/ModeSelection';
 import InterestSelection from './components/InterestSelection';
 import InterestInput from './components/InterestInput';
@@ -7,7 +8,6 @@ import Assessment from './components/Assessment';
 import Results from './components/Results';
 import GoogleSignInButton from './components/GoogleSignInButton';
 import ArchetypeGallery from './components/ArchetypeGallery';
-import ProfilePage from './components/ProfilePage';
 import { useAuth } from './contexts/AuthContext';
 import { saveAssessment, getUserAssessments, ensureUserProfile, assessmentToResults, getHasSeenProfile, markProfileAsSeen } from './services/assessmentHistory';
 import { Analytics } from './services/analytics';
@@ -23,6 +23,9 @@ const STEPS = {
 };
 
 function App() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
   const [step, setStep] = useState(STEPS.MODE);
   const [sessionId, setSessionId] = useState(null);
   const [mode, setMode] = useState(null);
@@ -49,8 +52,7 @@ function App() {
   // Gallery state
   const [showGallery, setShowGallery] = useState(false);
 
-  // Profile page state
-  const [showProfile, setShowProfile] = useState(false);
+  // Profile badge state
   const [hasSeenProfile, setHasSeenProfile] = useState(true); // Default true to not show badge initially
 
   // Extension offer state
@@ -63,6 +65,17 @@ function App() {
   // Timing refs for analytics
   const testStartTimeRef = useRef(null);
   const questionStartTimeRef = useRef(null);
+
+  // Check for startMode param (from retake button)
+  useEffect(() => {
+    const startMode = searchParams.get('startMode');
+    if (startMode && step === STEPS.MODE) {
+      // Auto-start test in the specified mode
+      handleModeSelect(startMode);
+      // Clear the param from URL
+      navigate('/', { replace: true });
+    }
+  }, [searchParams, step]);
 
   // Load user history and profile when authenticated
   useEffect(() => {
@@ -162,17 +175,13 @@ function App() {
 
   // Handle viewing profile page
   const handleViewProfile = () => {
-    setShowProfile(true);
     // Mark profile as seen to hide the badge
     if (user && !hasSeenProfile) {
       markProfileAsSeen(user.uid)
         .then(() => setHasSeenProfile(true))
         .catch(console.error);
     }
-  };
-
-  const handleCloseProfile = () => {
-    setShowProfile(false);
+    navigate('/profile');
   };
 
   // Try to restore session from localStorage
@@ -545,6 +554,7 @@ function App() {
           <GoogleSignInButton
             onViewProfile={handleViewProfile}
             showProfileBadge={isAuthenticated && userHistory.length > 0 && !hasSeenProfile}
+            showSignInPrompt={!isAuthenticated}
           />
         </div>
       )}
@@ -764,16 +774,6 @@ function App() {
           <ArchetypeGallery
             onClose={handleCloseGallery}
             userArchetype={results?.archetype?.name || userHistory[0]?.archetype?.name}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Profile Page Modal */}
-      <AnimatePresence>
-        {showProfile && (
-          <ProfilePage
-            onClose={handleCloseProfile}
-            onStartTest={resetTest}
           />
         )}
       </AnimatePresence>
