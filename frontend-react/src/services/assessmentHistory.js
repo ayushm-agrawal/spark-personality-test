@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   setDoc,
+  getDoc,
   getDocs,
   query,
   orderBy,
@@ -71,6 +72,41 @@ export async function ensureUserProfile(user) {
     photoURL: user.photoURL || null,
     lastActiveAt: serverTimestamp()
   }, { merge: true });
+}
+
+/**
+ * Check if user has seen their profile page
+ * @param {string} userId - Firebase Auth user ID
+ * @returns {Promise<boolean>} - True if user has seen profile
+ */
+export async function getHasSeenProfile(userId) {
+  try {
+    const userRef = doc(db, 'users', userId);
+    const snapshot = await getDoc(userRef);
+    if (snapshot.exists()) {
+      return snapshot.data().hasSeenProfile === true;
+    }
+    return false;
+  } catch (error) {
+    console.error('Error checking hasSeenProfile:', error);
+    return false;
+  }
+}
+
+/**
+ * Mark that user has seen their profile page
+ * @param {string} userId - Firebase Auth user ID
+ */
+export async function markProfileAsSeen(userId) {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, {
+      hasSeenProfile: true,
+      profileSeenAt: serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    console.error('Error marking profile as seen:', error);
+  }
 }
 
 /**
