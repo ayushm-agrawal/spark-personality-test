@@ -36,7 +36,7 @@ function App() {
   const [error, setError] = useState(null);
 
   // Auth state
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [userHistory, setUserHistory] = useState([]);
   const [isViewingHistory, setIsViewingHistory] = useState(false);
   const resultsSavedRef = useRef(false);
@@ -521,6 +521,15 @@ function App() {
     setDeepDiveInterest(null);
     setHolisticProfile(null);
   };
+
+  // Show loading screen while auth is initializing
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-4 border-violet-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
