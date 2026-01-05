@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Analytics } from '../services/analytics';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Trait colors for visualization
 const traitConfig = [
@@ -54,6 +55,7 @@ const modeColors = {
 // Analyzing animation with improved design
 function AnalyzingAnimation() {
   const [currentTrait, setCurrentTrait] = useState(0);
+  const { isDark } = useTheme();
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -63,7 +65,7 @@ function AnalyzingAnimation() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#09090b] flex flex-col items-center justify-center px-4">
+    <div className={`min-h-screen flex flex-col items-center justify-center px-4 ${isDark ? 'bg-[#09090b]' : 'bg-neutral-50'}`}>
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -71,13 +73,13 @@ function AnalyzingAnimation() {
       >
         {/* Spinning loader */}
         <motion.div
-          className="w-20 h-20 mx-auto mb-8 rounded-full border-2 border-neutral-700 border-t-violet-400 relative"
+          className={`w-20 h-20 mx-auto mb-8 rounded-full border-2 border-t-violet-400 relative ${isDark ? 'border-neutral-700' : 'border-gray-300'}`}
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
         />
 
         <motion.h2
-          className="text-2xl md:text-3xl font-bold text-white mb-4"
+          className={`text-2xl md:text-3xl font-bold mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}
           animate={{ opacity: [0.7, 1, 0.7] }}
           transition={{ duration: 1.5, repeat: Infinity }}
         >
@@ -106,8 +108,8 @@ function AnalyzingAnimation() {
               key={trait.name}
               className="text-xs px-2 py-1 rounded border"
               style={{
-                borderColor: i <= currentTrait ? trait.color : '#404040',
-                color: i <= currentTrait ? trait.color : '#6b7280',
+                borderColor: i <= currentTrait ? trait.color : (isDark ? '#404040' : '#d1d5db'),
+                color: i <= currentTrait ? trait.color : (isDark ? '#6b7280' : '#9ca3af'),
                 backgroundColor: i <= currentTrait ? `${trait.color}15` : 'transparent'
               }}
               initial={{ opacity: 0, y: 10 }}
@@ -119,7 +121,7 @@ function AnalyzingAnimation() {
           ))}
         </div>
 
-        <p className="text-neutral-500 mt-8 text-sm">
+        <p className={`mt-8 text-sm ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
           Crafting your unique archetype profile...
         </p>
       </motion.div>
@@ -185,6 +187,7 @@ export default function Assessment({
   const [view, setView] = useState(VIEW.QUESTION);
   const [lastQuestionId, setLastQuestionId] = useState(null);
   const [headerTyped, setHeaderTyped] = useState(false);
+  const { isDark } = useTheme();
 
   const isMultipleChoice = question?.type === 'multiple-choice';
   const options = isMultipleChoice ? Object.entries(question?.options || {}) : [];
@@ -254,10 +257,10 @@ export default function Assessment({
 
   if (!question || !question.text) {
     return (
-      <div className="min-h-screen bg-[#09090b] flex items-center justify-center px-4">
+      <div className={`min-h-screen flex items-center justify-center px-4 ${isDark ? 'bg-[#09090b]' : 'bg-neutral-50'}`}>
         <div className="text-center">
           <div className="animate-spin h-12 w-12 border-4 border-violet-500 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-neutral-400 text-sm">Loading question...</p>
+          <p className={`text-sm ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>Loading question...</p>
         </div>
       </div>
     );
@@ -292,19 +295,20 @@ export default function Assessment({
   const canSubmit = isMultipleChoice ? selectedAnswer !== null : textAnswer.trim().length > 0;
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white overflow-hidden relative flex flex-col">
+    <div className={`min-h-screen overflow-hidden relative flex flex-col ${isDark ? 'bg-[#09090b] text-white' : 'bg-neutral-50 text-gray-900'}`}>
       {/* Subtle background gradient */}
       <div className="absolute inset-0">
         <div
-          className="absolute inset-0 opacity-40"
+          className="absolute inset-0"
           style={{
-            background: `radial-gradient(ellipse at 30% 20%, ${modeColors[mode]}20 0%, transparent 50%)`
+            background: `radial-gradient(ellipse at 30% 20%, ${modeColors[mode]}${isDark ? '20' : '15'} 0%, transparent 50%)`,
+            opacity: isDark ? 0.4 : 0.6
           }}
         />
       </div>
 
       {/* Progress bar */}
-      <div className="relative z-20 w-full h-1.5 bg-neutral-800">
+      <div className={`relative z-20 w-full h-1.5 ${isDark ? 'bg-neutral-800' : 'bg-gray-200'}`}>
         <motion.div
           className="h-full rounded-r-full"
           style={{ background: 'linear-gradient(90deg, #fb923c, #ec4899, #a78bfa)' }}
@@ -315,7 +319,7 @@ export default function Assessment({
       </div>
 
       {/* Header - mode info hidden on mobile to avoid Start Over button overlap */}
-      <div className="relative z-10 px-4 md:px-6 py-3 md:py-4 flex items-center justify-end border-b border-neutral-800/50">
+      <div className={`relative z-10 px-4 md:px-6 py-3 md:py-4 flex items-center justify-end border-b ${isDark ? 'border-neutral-800/50' : 'border-gray-200/50'}`}>
         <div className="flex items-center gap-2 md:gap-3">
           {/* Mode info - hidden on mobile */}
           <div
@@ -324,12 +328,12 @@ export default function Assessment({
           >
             <ModeIcon mode={mode} />
           </div>
-          <span className="hidden md:inline text-neutral-400 text-sm font-medium">{modeLabels[mode]}</span>
-          <span className="hidden md:inline text-neutral-600 mx-2">•</span>
+          <span className={`hidden md:inline text-sm font-medium ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>{modeLabels[mode]}</span>
+          <span className={`hidden md:inline mx-2 ${isDark ? 'text-neutral-600' : 'text-gray-400'}`}>•</span>
           {/* Question counter - always visible */}
-          <span className="text-white font-semibold">{Math.min(questionNumber, totalQuestions)}</span>
-          <span className="text-neutral-500">/</span>
-          <span className="text-neutral-400">{totalQuestions}</span>
+          <span className={`font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>{Math.min(questionNumber, totalQuestions)}</span>
+          <span className={isDark ? 'text-neutral-500' : 'text-gray-400'}>/</span>
+          <span className={isDark ? 'text-neutral-400' : 'text-gray-500'}>{totalQuestions}</span>
         </div>
       </div>
 
@@ -350,7 +354,7 @@ export default function Assessment({
               <motion.p
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-neutral-500 text-sm md:text-base mb-4"
+                className={`text-sm md:text-base mb-4 ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}
               >
                 Interesting choice.
               </motion.p>
@@ -360,7 +364,7 @@ export default function Assessment({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                className="text-lg md:text-xl lg:text-2xl text-white font-medium mb-8 leading-relaxed"
+                className={`text-lg md:text-xl lg:text-2xl font-medium mb-8 leading-relaxed ${isDark ? 'text-white' : 'text-gray-900'}`}
               >
                 "{submittedAnswerText}"
               </motion.p>
@@ -373,7 +377,7 @@ export default function Assessment({
                   transition={{ delay: 0.2 }}
                   className="min-h-[60px]"
                 >
-                  <span className="text-neutral-400 text-base md:text-lg italic">
+                  <span className={`text-base md:text-lg italic ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
                     <TypewriterText
                       text={question.header}
                       onComplete={handleHeaderTypingComplete}
@@ -416,7 +420,11 @@ export default function Assessment({
                   animate={{ opacity: 1, x: 0 }}
                   className="mb-4 md:mb-6 mt-2 md:mt-0"
                 >
-                  <span className="inline-block px-3 py-1.5 md:px-4 md:py-2 bg-neutral-800/80 border border-neutral-700 rounded-full text-xs md:text-sm text-neutral-300">
+                  <span className={`inline-block px-3 py-1.5 md:px-4 md:py-2 border rounded-full text-xs md:text-sm ${
+                    isDark
+                      ? 'bg-neutral-800/80 border-neutral-700 text-neutral-300'
+                      : 'bg-white/80 border-gray-200 text-gray-600 shadow-sm'
+                  }`}>
                     {question.header}
                   </span>
                 </motion.div>
@@ -427,7 +435,7 @@ export default function Assessment({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                className="text-xl md:text-2xl lg:text-3xl font-bold leading-tight mb-6 md:mb-12 text-white"
+                className={`text-xl md:text-2xl lg:text-3xl font-bold leading-tight mb-6 md:mb-12 ${isDark ? 'text-white' : 'text-gray-900'}`}
               >
                 {question.text}
               </motion.h1>
@@ -447,10 +455,13 @@ export default function Assessment({
                       aria-selected={selectedAnswer === key}
                       className={`
                         w-full group relative text-left p-4 md:p-5 rounded-xl md:rounded-2xl border transition-all duration-200
-                        focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]
+                        focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2
+                        ${isDark ? 'focus-visible:ring-offset-[#09090b]' : 'focus-visible:ring-offset-neutral-50'}
                         ${selectedAnswer === key
                           ? 'bg-violet-500/15 border-violet-400/50'
-                          : 'bg-neutral-800/50 border-neutral-700 hover:bg-neutral-800 hover:border-neutral-600'
+                          : isDark
+                            ? 'bg-neutral-800/50 border-neutral-700 hover:bg-neutral-800 hover:border-neutral-600'
+                            : 'bg-white/80 border-gray-200 hover:bg-white hover:border-gray-300 shadow-sm'
                         }
                         ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
                       `}
@@ -461,7 +472,9 @@ export default function Assessment({
                           w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center text-xs md:text-sm font-bold transition-colors flex-shrink-0
                           ${selectedAnswer === key
                             ? 'bg-violet-500 text-white'
-                            : 'bg-neutral-700 text-neutral-300 group-hover:bg-neutral-600'
+                            : isDark
+                              ? 'bg-neutral-700 text-neutral-300 group-hover:bg-neutral-600'
+                              : 'bg-gray-100 text-gray-600 group-hover:bg-gray-200'
                           }
                         `}>
                           {key.toUpperCase()}
@@ -471,8 +484,10 @@ export default function Assessment({
                         <span className={`
                           flex-1 text-sm md:text-lg transition-colors leading-snug
                           ${selectedAnswer === key
-                            ? 'text-white'
-                            : 'text-neutral-200 group-hover:text-white'
+                            ? isDark ? 'text-white' : 'text-gray-900'
+                            : isDark
+                              ? 'text-neutral-200 group-hover:text-white'
+                              : 'text-gray-700 group-hover:text-gray-900'
                           }
                         `}>
                           {option.text}
@@ -482,7 +497,7 @@ export default function Assessment({
                         <div
                           className="hidden md:flex w-6 h-6 rounded-full border-2 items-center justify-center transition-colors flex-shrink-0"
                           style={{
-                            borderColor: selectedAnswer === key ? '#a78bfa' : '#525252',
+                            borderColor: selectedAnswer === key ? '#a78bfa' : (isDark ? '#525252' : '#d1d5db'),
                             background: selectedAnswer === key ? '#a78bfa' : 'transparent'
                           }}
                         >
@@ -512,7 +527,11 @@ export default function Assessment({
                     onChange={(e) => setTextAnswer(e.target.value)}
                     placeholder={question.placeholder || 'Share your thoughts...'}
                     disabled={isLoading}
-                    className="w-full p-4 md:p-5 bg-neutral-800/50 border border-neutral-700 rounded-xl md:rounded-2xl text-white placeholder-neutral-500 focus:outline-none focus:border-violet-500 transition-colors min-h-28 md:min-h-32 resize-none text-base md:text-lg"
+                    className={`w-full p-4 md:p-5 border rounded-xl md:rounded-2xl focus:outline-none focus:border-violet-500 transition-colors min-h-28 md:min-h-32 resize-none text-base md:text-lg ${
+                      isDark
+                        ? 'bg-neutral-800/50 border-neutral-700 text-white placeholder-neutral-500'
+                        : 'bg-white/80 border-gray-200 text-gray-900 placeholder-gray-400 shadow-sm'
+                    }`}
                   />
                 </motion.div>
               ) : null}
@@ -531,10 +550,13 @@ export default function Assessment({
                   whileTap={canSubmit && !isLoading ? { scale: 0.97 } : {}}
                   className={`
                     w-full md:w-auto px-6 md:px-8 py-3 md:py-4 rounded-xl font-medium text-base md:text-lg transition-all flex items-center justify-center gap-2
-                    focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]
+                    focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2
+                    ${isDark ? 'focus-visible:ring-offset-[#09090b]' : 'focus-visible:ring-offset-neutral-50'}
                     ${canSubmit && !isLoading
                       ? 'bg-gradient-to-r from-violet-500 to-pink-500 text-white shadow-lg'
-                      : 'bg-neutral-700 text-neutral-500 cursor-not-allowed'
+                      : isDark
+                        ? 'bg-neutral-700 text-neutral-500 cursor-not-allowed'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     }
                   `}
                 >
@@ -564,10 +586,10 @@ export default function Assessment({
 
       {/* Keyboard shortcuts - only on large screens */}
       {isMultipleChoice && !isInTransition && (
-        <div className="hidden lg:flex fixed bottom-3 right-4 items-center gap-1.5 text-neutral-500 text-[10px]">
-          <kbd className="px-1.5 py-0.5 bg-neutral-800 rounded border border-neutral-700 text-neutral-400 font-mono text-[10px]">A</kbd>
-          <kbd className="px-1.5 py-0.5 bg-neutral-800 rounded border border-neutral-700 text-neutral-400 font-mono text-[10px]">B</kbd>
-          <kbd className="px-1.5 py-0.5 bg-neutral-800 rounded border border-neutral-700 text-neutral-400 font-mono text-[10px]">C</kbd>
+        <div className={`hidden lg:flex fixed bottom-3 right-4 items-center gap-1.5 text-[10px] ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
+          <kbd className={`px-1.5 py-0.5 rounded border font-mono text-[10px] ${isDark ? 'bg-neutral-800 border-neutral-700 text-neutral-400' : 'bg-white border-gray-300 text-gray-600 shadow-sm'}`}>A</kbd>
+          <kbd className={`px-1.5 py-0.5 rounded border font-mono text-[10px] ${isDark ? 'bg-neutral-800 border-neutral-700 text-neutral-400' : 'bg-white border-gray-300 text-gray-600 shadow-sm'}`}>B</kbd>
+          <kbd className={`px-1.5 py-0.5 rounded border font-mono text-[10px] ${isDark ? 'bg-neutral-800 border-neutral-700 text-neutral-400' : 'bg-white border-gray-300 text-gray-600 shadow-sm'}`}>C</kbd>
           <span className="ml-0.5">to answer</span>
         </div>
       )}
