@@ -16,6 +16,10 @@ from services import (
     get_extension_opportunity, accept_extension,
     generate_device_fingerprint, get_or_create_profile, update_profile_after_test
 )
+from badge_service import (
+    check_badges_for_event, award_badges, get_user_badges,
+    track_insight_view, track_app_open, get_incomplete_badges_with_progress
+)
 from prefetch import get_prefetcher, init_prefetcher
 from models import UserResponse, InterestSelection, FeedbackResponse
 from pydantic import BaseModel
@@ -488,6 +492,33 @@ async def update_profile(request: UpdateProfileRequest):
         suspicious_patterns
     )
 
+    # Check and award badges after test completion
+    newly_awarded_badges = []
+    try:
+        # Prepare event data for badge checking
+        import time
+        event_data = {
+            "mode": session.get("mode", "overall"),
+            "normalized_scores": results.get("normalized_scores", {}),
+            "response_times": session.get("response_times", []),
+            "timestamp": time.time()
+        }
+
+        # Check for badges
+        newly_awarded_badges = check_badges_for_event(
+            updated_profile,
+            "assessment_completed",
+            event_data
+        )
+
+        # Award any newly earned badges
+        if newly_awarded_badges:
+            award_badges(request.profile_id, newly_awarded_badges)
+            api_logger.info(f"[API] Awarded {len(newly_awarded_badges)} badges: {[b['badge_id'] for b in newly_awarded_badges]}")
+
+    except Exception as e:
+        api_logger.error(f"[API] Error checking badges: {e}")
+
     # Return holistic data for frontend
     holistic = updated_profile.get("_holistic")
     return {
@@ -500,7 +531,8 @@ async def update_profile(request: UpdateProfileRequest):
             "stability": holistic.get("stability") if holistic else "new",
             "tests_included": holistic.get("tests_included") if holistic else 0,
             "tests_excluded": holistic.get("tests_excluded") if holistic else 0
-        } if holistic else None
+        } if holistic else None,
+        "newly_awarded_badges": newly_awarded_badges
     }
 
 
@@ -664,3 +696,165 @@ async def get_public_profile(username: str):
         return {"error": "Profile not found"}
 
     return profile
+
+
+# ============================================================================
+# BADGE ENDPOINTS
+# ============================================================================
+
+class TrackInsightRequest(BaseModel):
+    """Request model for tracking insight views."""
+    profile_id: str
+    archetype: str
+    section_name: str
+    time_spent_seconds: int = 0
+
+
+@router.post("/track-insight-view/")
+async def track_insight_view_endpoint(request: TrackInsightRequest):
+    """
+    Track when a user views an insight section.
+
+    This endpoint is called when a user reads insight sections like
+    "blind_spots", "strengths", "tips", etc. It tracks engagement
+    and checks for insight-related badges.
+
+    Args:
+        request: TrackInsightRequest with profile_id, archetype, section_name, time_spent_seconds
+
+    Returns:
+        dict: {"success": bool, "newly_awarded_badges": list}
+    """
+    from firebase import db
+
+    # Get current profile
+    profile_doc = db.collection("user_profiles").document(request.profile_id)
+    profile = profile_doc.get().to_dict()
+
+    if not profile:
+        return {"success": False, "error": "Profile not found"}
+
+    try:
+        # Track the insight view and check for badges
+        updated_profile, newly_earned = track_insight_view(
+            profile_id=request.profile_id,
+            user_profile=profile,
+            archetype=request.archetype,
+            section_name=request.section_name,
+            time_spent_seconds=request.time_spent_seconds
+        )
+
+        return {
+            "success": True,
+            "newly_awarded_badges": newly_earned,
+            "sections_viewed": len(updated_profile.get("insights_viewed", {}).get(request.archetype, {}))
+        }
+
+    except Exception as e:
+        api_logger.error(f"[API] Error tracking insight view: {e}")
+        return {"success": False, "error": str(e)}
+
+
+class TrackAppOpenRequest(BaseModel):
+    """Request model for tracking app opens."""
+    profile_id: str
+
+
+@router.post("/track-app-open/")
+async def track_app_open_endpoint(request: TrackAppOpenRequest):
+    """
+    Track when a user opens the app/profile page.
+
+    Updates weekly visit tracking and checks for weekly_wanderer badge.
+
+    Args:
+        request: TrackAppOpenRequest with profile_id
+
+    Returns:
+        dict: {"success": bool, "newly_awarded_badges": list}
+    """
+    from firebase import db
+
+    # Get current profile
+    profile_doc = db.collection("user_profiles").document(request.profile_id)
+    profile = profile_doc.get().to_dict()
+
+    if not profile:
+        return {"success": False, "error": "Profile not found"}
+
+    try:
+        # Track app open and check for badges
+        updated_profile, newly_earned = track_app_open(
+            profile_id=request.profile_id,
+            user_profile=profile
+        )
+
+        return {
+            "success": True,
+            "newly_awarded_badges": newly_earned,
+            "weekly_visits_count": len(updated_profile.get("weekly_visits", []))
+        }
+
+    except Exception as e:
+        api_logger.error(f"[API] Error tracking app open: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/badges/{profile_id}")
+async def get_badges_endpoint(profile_id: str):
+    """
+    Get all badges for a user profile.
+
+    Returns earned badges and progress toward incomplete badges.
+
+    Args:
+        profile_id: Firestore profile document ID
+
+    Returns:
+        dict: {"earned": list, "incomplete": list, "total_points": int}
+    """
+    from firebase import db
+
+    # Get profile
+    profile_doc = db.collection("user_profiles").document(profile_id)
+    profile = profile_doc.get().to_dict()
+
+    if not profile:
+        return {"error": "Profile not found"}
+
+    # Get earned badges with full details
+    earned_badges = []
+    badge_definitions = {}
+
+    # Load badge definitions for display info
+    for doc in db.collection("badge_definitions").where("enabled", "==", True).stream():
+        badge_definitions[doc.id] = doc.to_dict()
+
+    # Build earned badges list
+    for earned in profile.get("badges_earned", []):
+        badge_id = earned.get("badge_id")
+        badge_def = badge_definitions.get(badge_id, {})
+
+        earned_badges.append({
+            "badge_id": badge_id,
+            "display_name": badge_def.get("display_name", badge_id),
+            "description": badge_def.get("description", ""),
+            "icon": badge_def.get("icon", ""),
+            "rarity": badge_def.get("rarity", "common"),
+            "category": badge_def.get("category", ""),
+            "points": badge_def.get("points", 0),
+            "earned_at": earned.get("earned_at")
+        })
+
+    # Get incomplete badges with progress
+    incomplete_badges = get_incomplete_badges_with_progress(profile)
+
+    # Calculate total points
+    total_points = sum(b.get("points", 0) for b in earned_badges)
+
+    return {
+        "earned": earned_badges,
+        "incomplete": incomplete_badges,
+        "total_points": total_points,
+        "badges_count": len(earned_badges)
+    }
