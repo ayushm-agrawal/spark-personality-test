@@ -180,3 +180,65 @@ export async function getPublicProfile(username) {
   if (!response.ok) throw new Error('Failed to get public profile');
   return response.json();
 }
+
+// Archetype Insights API functions
+export async function getArchetypeInsights(archetypeId, mode = 'concise') {
+  const response = await fetch(`${API_BASE}/archetype-insights/${archetypeId}?mode=${mode}`);
+  if (!response.ok) throw new Error('Failed to get archetype insights');
+  return response.json();
+}
+
+export async function getAllArchetypeInsights() {
+  const response = await fetch(`${API_BASE}/archetype-insights/`);
+  if (!response.ok) throw new Error('Failed to get all archetype insights');
+  return response.json();
+}
+
+// Badge API functions
+export async function getBadges(profileId) {
+  const response = await fetch(`${API_BASE}/badges/${profileId}`);
+  if (!response.ok) throw new Error('Failed to get badges');
+  return response.json();
+}
+
+export async function trackInsightView(profileId, archetype, sectionName, timeSpentSeconds = 0) {
+  const response = await fetch(`${API_BASE}/track-insight-view/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      profile_id: profileId,
+      archetype,
+      section_name: sectionName,
+      time_spent_seconds: timeSpentSeconds
+    }),
+  });
+  if (!response.ok) throw new Error('Failed to track insight view');
+  return response.json();
+}
+
+export async function trackAppOpen(profileId) {
+  const response = await fetch(`${API_BASE}/track-app-open/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_id: profileId }),
+  });
+  if (!response.ok) throw new Error('Failed to track app open');
+  return response.json();
+}
+
+// User Preferences API functions
+export async function setInsightMode(profileId, mode) {
+  const response = await fetch(`${API_BASE}/set-insight-mode/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile_id: profileId, mode }),
+  });
+  if (!response.ok) throw new Error('Failed to set insight mode');
+  return response.json();
+}
+
+export async function getUserPreferences(profileId) {
+  const response = await fetch(`${API_BASE}/user-preferences/${profileId}`);
+  if (!response.ok) throw new Error('Failed to get user preferences');
+  return response.json();
+}
