@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
+import { profileModeToResults, getArchetypeColor } from '../utils/archetypeUtils';
 
 // Mode display config
 const modeConfig = {
@@ -39,8 +41,8 @@ function StabilityBadge({ stability, size = 'sm' }) {
   );
 }
 
-// Individual archetype card (non-clickable summary card for holistic profiles)
-function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, color }) {
+// Individual archetype card (clickable)
+function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, color, onClick, isLoading }) {
   const isDeepDive = mode === 'deep_dive';
   const config = isDeepDive ? null : modeConfig[mode];
 
@@ -50,11 +52,15 @@ function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, co
     : (config?.label || mode);
 
   const displayIcon = isDeepDive ? '🔍' : (config?.icon || '📊');
-  const displayColor = color || config?.color || '#a78bfa';
+  const displayColor = color || getArchetypeColor(archetype) || config?.color || '#a78bfa';
 
   return (
-    <div
-      className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl p-4 text-left"
+    <motion.button
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={onClick}
+      disabled={isLoading}
+      className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl p-4 text-left hover:border-violet-400/50 transition-colors disabled:opacity-50"
     >
       <div className="flex items-center gap-3">
         {/* Icon */}
@@ -62,7 +68,11 @@ function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, co
           className="w-10 h-10 rounded-lg flex items-center justify-center text-xl flex-shrink-0"
           style={{ backgroundColor: `${displayColor}20` }}
         >
-          {displayIcon}
+          {isLoading ? (
+            <div className="w-5 h-5 border-2 border-neutral-500 border-t-white rounded-full animate-spin" />
+          ) : (
+            displayIcon
+          )}
         </div>
 
         {/* Content */}
@@ -81,8 +91,13 @@ function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, co
             {testsIncluded} test{testsIncluded !== 1 ? 's' : ''}
           </p>
         </div>
+
+        {/* Arrow */}
+        <svg className="w-4 h-4 text-neutral-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
       </div>
-    </div>
+    </motion.button>
   );
 }
 
@@ -145,11 +160,30 @@ export default function YourArchetypes({
   onViewArchetype,
   onViewGallery
 }) {
+  const [loadingKey, setLoadingKey] = useState(null);
+
   // If we have holistic profile data, use it
   const hasHolisticData = holisticProfile && (
     Object.keys(holisticProfile.mode_profiles || {}).length > 0 ||
     Object.keys(holisticProfile.deep_dive_profiles || {}).length > 0
   );
+
+  // Handle click on holistic profile card - transform data for Results page
+  const handleProfileClick = async (modeData, mode, interest = null) => {
+    if (!onViewArchetype) return;
+
+    const key = interest ? `deep_dive:${interest}` : mode;
+    setLoadingKey(key);
+
+    try {
+      const resultsData = await profileModeToResults(modeData, mode, interest);
+      onViewArchetype(resultsData);
+    } catch (err) {
+      console.error('Failed to load archetype details:', err);
+    } finally {
+      setLoadingKey(null);
+    }
+  };
 
   // If no holistic data, fall back to grouping userHistory by mode
   const groupedHistory = {};
@@ -205,6 +239,8 @@ export default function YourArchetypes({
                 archetype={data.current_archetype}
                 testsIncluded={data.tests_included || 0}
                 stability={data.stability}
+                onClick={() => handleProfileClick(data, mode)}
+                isLoading={loadingKey === mode}
               />
             ))}
 
@@ -218,6 +254,8 @@ export default function YourArchetypes({
                 testsIncluded={data.tests_included || 1}
                 stability={data.stability}
                 color="#2dd4bf"
+                onClick={() => handleProfileClick(data, 'deep_dive', interest)}
+                isLoading={loadingKey === `deep_dive:${interest}`}
               />
             ))}
           </>
