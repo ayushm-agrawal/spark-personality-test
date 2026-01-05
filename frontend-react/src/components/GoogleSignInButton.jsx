@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
 
 // Google "G" logo SVG
 const GoogleLogo = ({ className = "w-4 h-4" }) => (
@@ -15,7 +14,6 @@ const GoogleLogo = ({ className = "w-4 h-4" }) => (
 
 export default function GoogleSignInButton({ variant = 'icon', onViewProfile = null, showProfileBadge = false }) {
   const { signInWithGoogle, isAuthenticated, user, logout, loading } = useAuth();
-  const { isDark } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
@@ -42,7 +40,7 @@ export default function GoogleSignInButton({ variant = 'icon', onViewProfile = n
   // Show loading state
   if (loading) {
     return (
-      <div className={`w-8 h-8 rounded-full animate-pulse ${isDark ? 'bg-neutral-800' : 'bg-gray-200'}`} />
+      <div className="w-8 h-8 rounded-full bg-neutral-800 animate-pulse" />
     );
   }
 
@@ -59,11 +57,7 @@ export default function GoogleSignInButton({ variant = 'icon', onViewProfile = n
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-colors focus:outline-none focus:border-violet-400 ${
-            isDark
-              ? 'bg-neutral-800/80 border-neutral-700 hover:border-violet-400'
-              : 'bg-white border-gray-200 hover:border-violet-400 shadow-sm'
-          }`}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-800/80 border border-neutral-700 hover:border-violet-400 transition-colors focus:outline-none focus:border-violet-400"
         >
           <div className="relative">
             <div className="w-7 h-7 rounded-full overflow-hidden">
@@ -94,10 +88,10 @@ export default function GoogleSignInButton({ variant = 'icon', onViewProfile = n
               </motion.div>
             )}
           </div>
-          <span className={`text-sm hidden sm:block max-w-[100px] truncate ${isDark ? 'text-neutral-300' : 'text-gray-700'}`}>
+          <span className="text-sm text-neutral-300 hidden sm:block max-w-[100px] truncate">
             {user.displayName?.split(' ')[0] || 'Profile'}
           </span>
-          <svg className={`w-4 h-4 ${isDark ? 'text-neutral-500' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-4 h-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </motion.button>
@@ -129,17 +123,13 @@ export default function GoogleSignInButton({ variant = 'icon', onViewProfile = n
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -10, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className={`absolute right-0 top-12 z-50 rounded-xl shadow-xl border py-2 min-w-[180px] ${
-                  isDark
-                    ? 'bg-neutral-800 border-neutral-700'
-                    : 'bg-white border-gray-200'
-                }`}
+                className="absolute right-0 top-12 z-50 bg-neutral-800 rounded-xl shadow-xl border border-neutral-700 py-2 min-w-[180px]"
               >
-                <div className={`px-4 py-2 border-b ${isDark ? 'border-neutral-700' : 'border-gray-100'}`}>
-                  <p className={`text-sm font-medium truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                <div className="px-4 py-2 border-b border-neutral-700">
+                  <p className="text-sm text-white font-medium truncate">
                     {user.displayName || 'User'}
                   </p>
-                  <p className={`text-xs truncate ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
+                  <p className="text-xs text-neutral-400 truncate">
                     {user.email}
                   </p>
                 </div>
@@ -148,11 +138,7 @@ export default function GoogleSignInButton({ variant = 'icon', onViewProfile = n
                 {onViewProfile && (
                   <button
                     onClick={handleProfileClick}
-                    className={`w-full px-4 py-2.5 text-left text-sm transition-colors flex items-center gap-3 ${
-                      isDark
-                        ? 'text-white hover:bg-neutral-700'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
+                    className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-neutral-700 transition-colors flex items-center gap-3"
                   >
                     <svg className="w-4 h-4 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -163,11 +149,7 @@ export default function GoogleSignInButton({ variant = 'icon', onViewProfile = n
 
                 <button
                   onClick={handleLogout}
-                  className={`w-full px-4 py-2.5 text-left text-sm transition-colors flex items-center gap-3 ${
-                    isDark
-                      ? 'text-neutral-400 hover:bg-neutral-700 hover:text-white'
-                      : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
-                  }`}
+                  className="w-full px-4 py-2.5 text-left text-sm text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors flex items-center gap-3"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -190,19 +172,15 @@ export default function GoogleSignInButton({ variant = 'icon', onViewProfile = n
         whileTap={{ scale: 0.98 }}
         onClick={handleSignIn}
         disabled={isSigningIn}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-colors disabled:opacity-50 ${
-          isDark
-            ? 'bg-neutral-800/80 border-neutral-700 hover:border-violet-400'
-            : 'bg-white border-gray-200 hover:border-violet-400 shadow-sm'
-        }`}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-800/80 border border-neutral-700 hover:border-violet-400 transition-colors disabled:opacity-50"
         title="Sign in with Google"
       >
         {isSigningIn ? (
-          <div className={`w-4 h-4 border-2 rounded-full animate-spin ${isDark ? 'border-neutral-500 border-t-white' : 'border-gray-300 border-t-gray-600'}`} />
+          <div className="w-4 h-4 border-2 border-neutral-500 border-t-white rounded-full animate-spin" />
         ) : (
           <>
             <GoogleLogo className="w-4 h-4" />
-            <span className={`text-sm ${isDark ? 'text-neutral-300' : 'text-gray-700'}`}>Sign in</span>
+            <span className="text-sm text-neutral-300">Sign in</span>
           </>
         )}
       </motion.button>
