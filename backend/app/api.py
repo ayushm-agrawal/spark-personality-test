@@ -450,16 +450,17 @@ class UpdateProfileRequest(BaseModel):
 @router.post("/update-profile/")
 async def update_profile(request: UpdateProfileRequest):
     """
-    Update user profile after completing a test.
+    Update user profile after completing a test (Phase 2.5 weighted approach).
 
     This should be called after finalize_test to update the user's
-    cumulative scores, test history, and current archetype.
+    mode-specific profiles with weighted scores. Tests with suspicious
+    patterns are down-weighted or excluded.
 
     Args:
         request (UpdateProfileRequest): Contains profile_id and session_id.
 
     Returns:
-        dict: Updated profile data.
+        dict: Updated profile data including holistic archetype info.
     """
     from firebase import db
 
@@ -474,4 +475,92 @@ async def update_profile(request: UpdateProfileRequest):
     if not results:
         return {"error": "Test not finalized yet"}
 
-    return update_profile_after_test(request.profile_id, session, results)
+    # Extract confidence and suspicion data for weighted profile update
+    confidence = results.get("confidence", {"confidence_pct": 50, "tier": "emerging"})
+    suspicious_patterns = results.get("suspicious_patterns", {"suspicious": False, "flags": []})
+
+    # Update profile with weighted scores
+    updated_profile = update_profile_after_test(
+        request.profile_id,
+        session,
+        results,
+        confidence,
+        suspicious_patterns
+    )
+
+    # Return holistic data for frontend
+    holistic = updated_profile.get("_holistic")
+    return {
+        "profile_id": request.profile_id,
+        "quality_weight": updated_profile.get("_quality_weight"),
+        "included_in_profile": updated_profile.get("_included_in_profile"),
+        "holistic": {
+            "archetype": holistic.get("current_archetype") if holistic else None,
+            "confidence": holistic.get("confidence") if holistic else None,
+            "stability": holistic.get("stability") if holistic else "new",
+            "tests_included": holistic.get("tests_included") if holistic else 0,
+            "tests_excluded": holistic.get("tests_excluded") if holistic else 0
+        } if holistic else None
+    }
+
+
+@router.get("/profile/{profile_id}")
+async def get_profile_view(profile_id: str):
+    """
+    Get a comprehensive view of a user's profile across all modes.
+
+    Returns mode-specific profiles, deep dive profiles, and test history summary.
+    This endpoint enables a Profile page showing all archetypes across modes.
+
+    Args:
+        profile_id: Firestore profile document ID
+
+    Returns:
+        dict: Profile overview with mode_profiles, deep_dive_profiles, and stats
+    """
+    from firebase import db
+
+    profile_doc = db.collection("user_profiles").document(profile_id)
+    profile = profile_doc.get().to_dict()
+
+    if not profile:
+        return {"error": "Profile not found"}
+
+    # Build mode profiles summary
+    mode_profiles_summary = {}
+    for mode, data in profile.get("mode_profiles", {}).items():
+        mode_profiles_summary[mode] = {
+            "current_archetype": data.get("current_archetype"),
+            "confidence": data.get("confidence"),
+            "stability": data.get("stability"),
+            "tests_included": data.get("tests_included"),
+            "tests_excluded": data.get("tests_excluded")
+        }
+
+    # Build deep dive profiles summary
+    deep_dive_summary = {}
+    for interest, data in profile.get("deep_dive_profiles", {}).items():
+        deep_dive_summary[interest] = {
+            "current_archetype": data.get("current_archetype"),
+            "confidence": data.get("confidence"),
+            "stability": data.get("stability"),
+            "tests_included": data.get("tests_included")
+        }
+
+    # Calculate totals
+    test_history = profile.get("test_history", [])
+    total_tests = len(test_history)
+    included_tests = sum(1 for t in test_history if t.get("included_in_profile", True))
+    excluded_tests = total_tests - included_tests
+
+    return {
+        "profile_id": profile_id,
+        "mode_profiles": mode_profiles_summary,
+        "deep_dive_profiles": deep_dive_summary,
+        "total_tests": total_tests,
+        "tests_included": included_tests,
+        "tests_excluded": excluded_tests,
+        "member_since": profile.get("created_at"),
+        "last_updated": profile.get("updated_at"),
+        "current_archetype": profile.get("current_archetype")  # Most recent
+    }

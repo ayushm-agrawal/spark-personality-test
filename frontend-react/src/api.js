@@ -107,3 +107,35 @@ export async function acceptExtension(sessionId) {
   if (!response.ok) throw new Error('Failed to accept extension');
   return response.json();
 }
+
+export async function getOrCreateProfile(userId = null, deviceFingerprint = null) {
+  const response = await fetch(`${API_BASE}/get-profile/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      device_fingerprint: deviceFingerprint
+    }),
+  });
+  if (!response.ok) throw new Error('Failed to get profile');
+  return response.json();
+}
+
+export async function updateProfile(profileId, sessionId) {
+  const response = await fetch(`${API_BASE}/update-profile/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      profile_id: profileId,
+      session_id: sessionId
+    }),
+  });
+  if (!response.ok) throw new Error('Failed to update profile');
+  return response.json();
+}
+
+export async function getProfileView(profileId) {
+  const response = await fetch(`${API_BASE}/profile/${profileId}`);
+  if (!response.ok) throw new Error('Failed to get profile view');
+  return response.json();
+}
