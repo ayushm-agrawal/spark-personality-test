@@ -41,8 +41,8 @@ const archetypeColors = {
 
 // Mode display names
 const modeLabels = {
-  hackathon: { label: 'Hackathon', icon: '🚀', description: 'Team collaboration under pressure' },
-  overall: { label: 'Overall', icon: '✨', description: 'General personality profile' },
+  hackathon: { label: 'Under Pressure', icon: '⚡', description: 'How you collaborate under pressure' },
+  overall: { label: 'Full Profile', icon: '✨', description: 'Complete personality picture' },
   deep_dive: { label: 'Deep Dive', icon: '🔍', description: 'Context-specific insights' },
 };
 
