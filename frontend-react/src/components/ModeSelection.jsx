@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Analytics } from '../services/analytics';
 
 // Custom Mode Icons (SVG) - replaces emojis for better accessibility
 const ModeIcons = {
@@ -139,6 +140,11 @@ const modes = [
 
 export default function ModeSelection({ onSelectMode, userHistory = [], onViewHistory, onViewGallery }) {
   const [hoveredMode, setHoveredMode] = useState(null);
+
+  // Track screen view on mount
+  useEffect(() => {
+    Analytics.screenView('mode_selection');
+  }, []);
 
   // Keyboard navigation
   useEffect(() => {
