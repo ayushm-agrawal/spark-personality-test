@@ -1,77 +1,39 @@
 @import "tailwindcss";
 
-/* Dark theme (default) */
-:root,
-.dark {
-  --bg-primary: #09090b;
-  --bg-secondary: #18181b;
-  --bg-card: #1f1f23;
-  --bg-card-hover: #27272a;
-  --bg-elevated: #27272a;
-  --accent-primary: #a78bfa;
-  --accent-secondary: #8b5cf6;
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --border-primary: #27272a;
-  --border-secondary: #3f3f46;
+/* Custom dark theme */
+:root {
+  --bg-primary: #0f0f1a;
+  --bg-secondary: #1a1a2e;
+  --bg-card: #16213e;
+  --accent-primary: #e94560;
+  --accent-secondary: #0f3460;
+  --text-primary: #eaeaea;
+  --text-secondary: #a0a0a0;
   --gradient-start: #667eea;
   --gradient-end: #764ba2;
-  --shadow-color: rgba(0, 0, 0, 0.3);
-  --glass-bg: rgba(255, 255, 255, 0.05);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  color-scheme: dark;
-}
-
-/* Light theme */
-.light {
-  --bg-primary: #fafafa;
-  --bg-secondary: #f4f4f5;
-  --bg-card: #ffffff;
-  --bg-card-hover: #f4f4f5;
-  --bg-elevated: #ffffff;
-  --accent-primary: #7c3aed;
-  --accent-secondary: #6d28d9;
-  --text-primary: #18181b;
-  --text-secondary: #52525b;
-  --text-muted: #71717a;
-  --border-primary: #e4e4e7;
-  --border-secondary: #d4d4d8;
-  --gradient-start: #667eea;
-  --gradient-end: #764ba2;
-  --shadow-color: rgba(0, 0, 0, 0.08);
-  --glass-bg: rgba(255, 255, 255, 0.8);
-  --glass-border: rgba(0, 0, 0, 0.08);
-  color-scheme: light;
 }
 
 body {
-  background: var(--bg-primary);
+  background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
   color: var(--text-primary);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   min-height: 100vh;
   margin: 0;
-  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 #root {
   min-height: 100vh;
 }
 
-/* Glassmorphism card effect - adapts to theme */
+/* Glassmorphism card effect */
 .glass-card {
-  background: var(--glass-bg);
+  background: rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(10px);
-  border: 1px solid var(--glass-border);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1rem;
 }
 
-/* Theme-aware glass card for light mode with shadow */
-.light .glass-card {
-  box-shadow: 0 4px 6px -1px var(--shadow-color), 0 2px 4px -2px var(--shadow-color);
-}
-
-/* Gradient text - works on both themes */
+/* Gradient text */
 .gradient-text {
   background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
   -webkit-background-clip: text;
@@ -79,48 +41,22 @@ body {
   background-clip: text;
 }
 
-/* Custom scrollbar - dark theme */
-.dark::-webkit-scrollbar,
-.dark ::-webkit-scrollbar {
+/* Custom scrollbar */
+::-webkit-scrollbar {
   width: 8px;
 }
 
-.dark::-webkit-scrollbar-track,
-.dark ::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: var(--bg-secondary);
 }
 
-.dark::-webkit-scrollbar-thumb,
-.dark ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+::-webkit-scrollbar-thumb {
+  background: var(--accent-secondary);
   border-radius: 4px;
 }
 
-.dark::-webkit-scrollbar-thumb:hover,
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-primary);
-}
-
-/* Custom scrollbar - light theme */
-.light::-webkit-scrollbar,
-.light ::-webkit-scrollbar {
-  width: 8px;
-}
-
-.light::-webkit-scrollbar-track,
-.light ::-webkit-scrollbar-track {
-  background: #f4f4f5;
-}
-
-.light::-webkit-scrollbar-thumb,
-.light ::-webkit-scrollbar-thumb {
-  background: #d4d4d8;
-  border-radius: 4px;
-}
-
-.light::-webkit-scrollbar-thumb:hover,
-.light ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-primary);
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gradient-start);
 }
 
 /* Radar chart styles */
@@ -129,44 +65,4 @@ body {
   width: 100%;
   max-width: 300px;
   aspect-ratio: 1;
-}
-
-/* Theme transition for smooth switching */
-* {
-  transition-property: background-color, border-color, color, box-shadow;
-  transition-duration: 0.15s;
-  transition-timing-function: ease-out;
-}
-
-/* Disable transition for elements that shouldn't animate */
-.no-transition,
-.no-transition * {
-  transition: none !important;
-}
-
-/* Accessibility: Ensure focus is visible */
-:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
-
-/* High contrast focus for keyboard navigation */
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
-
-/* Theme-aware background patterns for visual interest */
-.bg-pattern-dark {
-  background-image: radial-gradient(circle at 25% 25%, rgba(167, 139, 250, 0.1) 0%, transparent 50%),
-                    radial-gradient(circle at 75% 75%, rgba(251, 146, 60, 0.08) 0%, transparent 50%);
-}
-
-.bg-pattern-light {
-  background-image: radial-gradient(circle at 25% 25%, rgba(124, 58, 237, 0.08) 0%, transparent 50%),
-                    radial-gradient(circle at 75% 75%, rgba(234, 88, 12, 0.06) 0%, transparent 50%);
 }
