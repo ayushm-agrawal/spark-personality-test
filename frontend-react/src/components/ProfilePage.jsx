@@ -291,15 +291,32 @@ const modeLabels = {
   deep_dive: { label: 'Deep Dive', icon: '🔍', description: 'Context-specific insights' },
 };
 
-// Profile card component
-function ProfileCard({ title, icon, archetype, confidence, stability, testsIncluded, testsExcluded, color }) {
+// Archetype icons mapping
+const archetypeIcons = {
+  'The Architect': '🏗️',
+  'The Catalyst': '⚡',
+  'The Strategist': '♟️',
+  'The Guide': '🧭',
+  'The Alchemist': '🔮',
+  'The Gardener': '🌱',
+  'The Luminary': '✨',
+  'The Sentinel': '🛡️'
+};
+
+// Profile card component - now clickable
+function ProfileCard({ title, icon, archetype, confidence, stability, testsIncluded, testsExcluded, color, mode, onClick }) {
   const archetypeColor = color || archetypeColors[archetype] || '#a78bfa';
+  const archetypeIcon = archetypeIcons[archetype] || '✨';
 
   return (
-    <motion.div
+    <motion.button
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5"
+      whileHover={{ scale: 1.01 }}
+      whileTap={{ scale: 0.99 }}
+      onClick={onClick}
+      disabled={!archetype}
+      className="w-full bg-neutral-900/80 border border-neutral-800 rounded-2xl p-5 text-left hover:bg-neutral-800/80 hover:border-neutral-700 transition-all group disabled:opacity-70 disabled:cursor-default disabled:hover:scale-100"
     >
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -312,7 +329,7 @@ function ProfileCard({ title, icon, archetype, confidence, stability, testsInclu
             </p>
           </div>
         </div>
-        <StabilityBadge stability={stability} size="sm" />
+        <StabilityBadge stability={stability} size="sm" showTooltip={true} />
       </div>
 
       <div className="flex items-center justify-between">
@@ -326,16 +343,29 @@ function ProfileCard({ title, icon, archetype, confidence, stability, testsInclu
             </p>
           )}
         </div>
-        {archetype && (
-          <div
-            className="w-12 h-12 rounded-xl flex items-center justify-center"
-            style={{ backgroundColor: `${archetypeColor}20` }}
-          >
-            <span className="text-2xl">{archetypeColor === '#60a5fa' ? '🏛️' : '✨'}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {archetype && (
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center"
+              style={{ backgroundColor: `${archetypeColor}20` }}
+            >
+              <span className="text-2xl">{archetypeIcon}</span>
+            </div>
+          )}
+          {/* Chevron indicator for clickable */}
+          {archetype && (
+            <svg
+              className="w-5 h-5 text-neutral-500 group-hover:text-neutral-300 transition-colors"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          )}
+        </div>
       </div>
-    </motion.div>
+    </motion.button>
   );
 }
 
@@ -352,8 +382,8 @@ function EmptyState({ message, submessage }) {
   );
 }
 
-export default function ProfilePage({ onClose, onStartTest }) {
-  const { user } = useAuth();
+export default function ProfilePage() {
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -364,6 +394,14 @@ export default function ProfilePage({ onClose, onStartTest }) {
   const [badges, setBadges] = useState(null);
   const [selectedBadge, setSelectedBadge] = useState(null);
 
+  // Redirect non-authenticated users to home
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      navigate('/', { replace: true });
+    }
+  }, [authLoading, isAuthenticated, navigate]);
+
+  // Load profile data
   useEffect(() => {
     const loadProfile = async () => {
       if (!user) return;
@@ -422,6 +460,20 @@ export default function ProfilePage({ onClose, onStartTest }) {
     loadProfile();
   }, [user]);
 
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
+        <div className="animate-spin h-10 w-10 border-4 border-violet-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (!isAuthenticated) {
+    return null;
+  }
+
   // Navigate to insights page
   const handleViewInsights = (archetype) => {
     if (!archetype) return;
@@ -448,28 +500,21 @@ export default function ProfilePage({ onClose, onStartTest }) {
   );
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-[#09090b] overflow-y-auto"
-    >
+    <div className="min-h-screen bg-[#09090b]">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[#09090b]/95 backdrop-blur-sm border-b border-neutral-800">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-center relative">
           <button
-            onClick={onClose}
-            className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
+            onClick={() => navigate('/')}
+            className="absolute left-4 flex items-center gap-2 text-neutral-400 hover:text-white transition-colors"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            <span className="hidden sm:inline">Back</span>
+            <span className="hidden sm:inline">Home</span>
           </button>
 
           <h1 className="text-lg font-semibold text-white">My Profile</h1>
-
-          <div className="w-16" /> {/* Spacer for centering */}
         </div>
       </div>
 
@@ -610,6 +655,13 @@ export default function ProfilePage({ onClose, onStartTest }) {
                         stability={data.stability || 'new'}
                         testsIncluded={data.tests_included || 0}
                         testsExcluded={data.tests_excluded || 0}
+                        mode={mode}
+                        onClick={() => {
+                          if (data.current_archetype) {
+                            const archetypeId = data.current_archetype.toLowerCase().replace(/\s+/g, '-').replace('the-', '');
+                            navigate(`/insights/${archetypeId}?mode=${mode}`);
+                          }
+                        }}
                       />
                     );
                   })}
@@ -634,28 +686,16 @@ export default function ProfilePage({ onClose, onStartTest }) {
                       stability={data.stability || 'new'}
                       testsIncluded={data.tests_included || 0}
                       testsExcluded={0}
+                      mode={interest}
+                      onClick={() => {
+                        if (data.current_archetype) {
+                          const archetypeId = data.current_archetype.toLowerCase().replace(/\s+/g, '-').replace('the-', '');
+                          navigate(`/insights/${archetypeId}?mode=${interest}`);
+                        }
+                      }}
                     />
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Current archetype highlight with View Insights */}
-            {profile?.current_archetype && (
-              <div className="mb-8 p-6 rounded-2xl bg-gradient-to-br from-violet-500/10 to-purple-500/10 border border-violet-500/30">
-                <p className="text-sm text-violet-300 mb-2">Most Recent Archetype</p>
-                <p className="text-3xl font-bold text-white mb-4">{profile.current_archetype}</p>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => handleViewInsights(profile.current_archetype)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                  </svg>
-                  View Full Insights
-                </motion.button>
               </div>
             )}
 
@@ -664,10 +704,7 @@ export default function ProfilePage({ onClose, onStartTest }) {
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  onClose();
-                  if (onStartTest) onStartTest();
-                }}
+                onClick={() => navigate('/')}
                 className="px-6 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white font-medium hover:from-violet-500 hover:to-purple-500 transition-all"
               >
                 Take Another Test
@@ -686,6 +723,6 @@ export default function ProfilePage({ onClose, onStartTest }) {
           <BadgeDetailModal badge={selectedBadge} onClose={() => setSelectedBadge(null)} />
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }
