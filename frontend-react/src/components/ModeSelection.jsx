@@ -127,14 +127,14 @@ const modes = [
     subtitle: 'Focus Mode',
     duration: '5 min',
     questions: 10,
-    description: 'How your personality shows up in the areas of life you care about.',
+    description: 'Pick one area of life—work, relationships, anything—and discover how you show up there.',
     colors: {
       primary: '#2dd4bf',
       text: '#5eead4',
       glow: 'rgba(45, 212, 191, 0.15)',
       border: 'rgba(45, 212, 191, 0.3)'
     },
-    tagline: 'Your world. Your rules.'
+    tagline: 'Your context. Your truth.'
   }
 ];
 

@@ -798,7 +798,75 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, zoneOf
   );
 }
 
-export default function Results({ results, mode, onFeedback, showSavePrompt = false, onViewGallery }) {
+// Confidence Info Tooltip Component
+function ConfidenceInfo({ confidence, archetypeColor }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+
+  const tier = confidence?.tier || 'emerging';
+  const explanation = confidence?.explanation;
+  const confidencePct = confidence?.confidence_pct || confidence?.archetype_confidence || 50;
+
+  const getTierLabel = () => {
+    if (tier === 'clear') return 'Strong match';
+    if (tier === 'emerging') return 'Emerging Profile';
+    return 'Exploring';
+  };
+
+  const getTierColor = () => {
+    if (tier === 'clear') return archetypeColor;
+    if (tier === 'emerging') return '#fbbf24'; // amber
+    return '#f97316'; // orange
+  };
+
+  return (
+    <div className="relative inline-flex items-center gap-2 mt-2">
+      {/* Tier badge */}
+      {tier !== 'clear' && (
+        <span
+          className="px-2 py-0.5 text-xs font-medium rounded-full"
+          style={{ backgroundColor: `${getTierColor()}20`, color: getTierColor() }}
+        >
+          {getTierLabel()}
+        </span>
+      )}
+
+      {/* Confidence text */}
+      <span className="text-neutral-500">
+        {tier === 'clear' ? 'Strong match' : ''} {Math.round(confidencePct)}% confidence
+      </span>
+
+      {/* Info icon for non-clear tiers */}
+      {tier !== 'clear' && explanation && (
+        <button
+          onClick={() => setShowTooltip(!showTooltip)}
+          className="text-neutral-500 hover:text-neutral-300 transition-colors"
+          aria-label="More info about confidence"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+      )}
+
+      {/* Tooltip */}
+      <AnimatePresence>
+        {showTooltip && explanation && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 w-72 p-3 rounded-xl bg-neutral-800 border border-neutral-700 shadow-xl"
+          >
+            <p className="text-sm text-neutral-200">{explanation}</p>
+            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-neutral-800 border-l border-t border-neutral-700 rotate-45" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default function Results({ results, mode, interest, onFeedback, showSavePrompt = false, onViewGallery }) {
   const [phase, setPhase] = useState('loading');
   const [showDetails, setShowDetails] = useState(false);
   const [rating, setRating] = useState(0);
@@ -834,11 +902,16 @@ export default function Results({ results, mode, onFeedback, showSavePrompt = fa
   const archetypeColor = archetype.color || '#a78bfa';
   const archetypeTagline = archetype.tagline || '';
   const confidence = results.archetype_confidence;
+  const confidenceData = results.confidence || { tier: 'emerging', confidence_pct: confidence };
   const scores = results.normalized_scores;
   const traitBreakdown = results.trait_breakdown;
   const allMatches = results.all_matches;
   const personalizedProfile = results.personalized_profile || results.archetype_description || {};
   const modeSpecific = results.mode_specific || {};
+  const suspiciousWarning = results.suspicious_patterns;
+
+  // Get interest from prop or from results (backend includes it in mode_specific)
+  const displayInterest = interest || modeSpecific?.interest;
 
   // Build traits array from scores
   const traits = scores ? traitConfig.map(t => ({
@@ -948,6 +1021,39 @@ export default function Results({ results, mode, onFeedback, showSavePrompt = fa
               animate={{ opacity: 1 }}
               className="w-full max-w-4xl"
             >
+              {/* Suspicious patterns warning banner */}
+              {suspiciousWarning && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="text-amber-400 text-xl flex-shrink-0">⚠️</span>
+                    <div className="flex-1">
+                      <p className="text-amber-200 font-medium mb-1">Quick responses detected</p>
+                      <p className="text-amber-200/80 text-sm mb-3">
+                        {suspiciousWarning.warning || "Your results may be less accurate. For a clearer picture, you can retake the test."}
+                      </p>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => window.location.reload()}
+                          className="px-4 py-2 text-sm font-medium rounded-lg bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 transition-colors"
+                        >
+                          Retake Test
+                        </button>
+                        <button
+                          onClick={() => {}}
+                          className="px-4 py-2 text-sm font-medium rounded-lg text-amber-200/60 hover:text-amber-200 transition-colors"
+                        >
+                          Keep these results
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
               {/* Hero */}
               <div className="text-center mb-10">
                 <motion.div
@@ -957,6 +1063,17 @@ export default function Results({ results, mode, onFeedback, showSavePrompt = fa
                 >
                   <ArchetypeSymbol archetype={archetypeName} size={100} color={archetypeColor} />
                 </motion.div>
+
+                {/* Show interest context for deep_dive mode */}
+                {mode === 'deep_dive' && displayInterest && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-lg text-neutral-400 mb-2"
+                  >
+                    When it comes to <span className="text-neutral-200 font-medium">{displayInterest}</span>, you're
+                  </motion.p>
+                )}
 
                 <h1
                   className="text-5xl md:text-6xl font-bold mb-3"
@@ -971,10 +1088,18 @@ export default function Results({ results, mode, onFeedback, showSavePrompt = fa
                   </p>
                 )}
 
-                {confidence !== undefined && (
-                  <p className="text-neutral-500 mt-2">
-                    {confidence > 70 ? 'Strong match' : confidence > 40 ? 'Good match' : 'Emerging profile'} • {Math.round(confidence)}% confidence
-                  </p>
+                {/* Confidence tier display with tooltip */}
+                <ConfidenceInfo confidence={confidenceData} archetypeColor={archetypeColor} />
+
+                {/* Show explanation prominently for unclear tier */}
+                {confidenceData?.tier === 'unclear' && confidenceData?.explanation && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-4 mx-auto max-w-md p-3 rounded-xl bg-orange-500/10 border border-orange-500/30"
+                  >
+                    <p className="text-sm text-orange-200">{confidenceData.explanation}</p>
+                  </motion.div>
                 )}
               </div>
 
