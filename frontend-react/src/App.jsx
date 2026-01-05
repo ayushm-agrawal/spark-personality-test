@@ -8,9 +8,11 @@ import Assessment from './components/Assessment';
 import Results from './components/Results';
 import GoogleSignInButton from './components/GoogleSignInButton';
 import ArchetypeGallery from './components/ArchetypeGallery';
+import TutorialModal from './components/TutorialModal';
 import { useAuth } from './contexts/AuthContext';
 import { saveAssessment, getUserAssessments, ensureUserProfile, assessmentToResults, getHasSeenProfile, markProfileAsSeen } from './services/assessmentHistory';
 import { Analytics } from './services/analytics';
+import { isTutorialCompleted, markTutorialCompleted, syncTutorialStatusOnSignIn } from './services/tutorialService';
 import * as api from './api';
 
 const STEPS = {
@@ -61,6 +63,11 @@ function App() {
 
   // Deep dive interest state
   const [deepDiveInterest, setDeepDiveInterest] = useState(null);
+
+  // Tutorial state
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [highlightSignIn, setHighlightSignIn] = useState(false);
+  const tutorialCheckedRef = useRef(false);
 
   // Timing refs for analytics
   const testStartTimeRef = useRef(null);
@@ -152,6 +159,56 @@ function App() {
       setHolisticProfile(null);
     }
   }, [step]);
+
+  // Check and show tutorial for first-time users
+  useEffect(() => {
+    // Only check once, and only when on MODE step (home page)
+    if (tutorialCheckedRef.current || step !== STEPS.MODE || authLoading) {
+      return;
+    }
+
+    tutorialCheckedRef.current = true;
+
+    const checkTutorial = async () => {
+      const completed = await isTutorialCompleted(user?.uid);
+      if (!completed) {
+        // Show tutorial after a short delay (500ms)
+        setTimeout(() => {
+          setShowTutorial(true);
+          Analytics.tutorialStarted();
+        }, 500);
+      }
+    };
+
+    checkTutorial();
+  }, [step, authLoading, user]);
+
+  // Sync tutorial status when user signs in
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      syncTutorialStatusOnSignIn(user.uid).catch(console.error);
+    }
+  }, [isAuthenticated, user]);
+
+  // Handle tutorial completion
+  const handleTutorialComplete = (skipped, skipSlide = null) => {
+    setShowTutorial(false);
+    setHighlightSignIn(false);
+    markTutorialCompleted(user?.uid, skipped, skipSlide);
+
+    if (skipped) {
+      Analytics.tutorialSkipped(skipSlide);
+    } else {
+      Analytics.tutorialCompleted();
+    }
+  };
+
+  // Handle tutorial slide view (for analytics and highlighting)
+  const handleTutorialSlideView = (slideIndex, slideId) => {
+    Analytics.tutorialSlideViewed(slideIndex, slideId);
+    // Highlight sign-in button on navigation slide (last slide)
+    setHighlightSignIn(slideId === 'navigation');
+  };
 
   // Handle viewing historical result
   const handleViewHistory = (assessment) => {
@@ -550,11 +607,18 @@ function App() {
     <div className="min-h-screen">
       {/* Google Sign In Button - only on MODE and RESULTS screens */}
       {(step === STEPS.MODE || step === STEPS.RESULTS) && (
-        <div className="fixed top-4 right-4 z-50">
+        <div className={`fixed top-4 right-4 z-[101] ${highlightSignIn ? 'animate-pulse' : ''}`}>
+          {/* Highlight ring for tutorial */}
+          {highlightSignIn && (
+            <div className="absolute -inset-2 rounded-full border-2 border-violet-500 animate-ping opacity-75" />
+          )}
+          {highlightSignIn && (
+            <div className="absolute -inset-2 rounded-full border-2 border-violet-400" />
+          )}
           <GoogleSignInButton
             onViewProfile={handleViewProfile}
             showProfileBadge={isAuthenticated && userHistory.length > 0 && !hasSeenProfile}
-            showSignInPrompt={!isAuthenticated}
+            showSignInPrompt={!isAuthenticated && !showTutorial}
           />
         </div>
       )}
@@ -774,6 +838,16 @@ function App() {
           <ArchetypeGallery
             onClose={handleCloseGallery}
             userArchetype={results?.archetype?.name || userHistory[0]?.archetype?.name}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* First-time user tutorial */}
+      <AnimatePresence>
+        {showTutorial && (
+          <TutorialModal
+            onComplete={handleTutorialComplete}
+            onSlideView={handleTutorialSlideView}
           />
         )}
       </AnimatePresence>

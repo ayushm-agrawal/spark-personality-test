@@ -76,6 +76,17 @@ export const Analytics = {
     question_number: questionNumber
   }),
 
+  // Tutorial events
+  tutorialStarted: () => trackEvent('tutorial_started'),
+  tutorialSlideViewed: (slideIndex, slideId) => trackEvent('tutorial_slide_viewed', {
+    slide_index: slideIndex,
+    slide_id: slideId
+  }),
+  tutorialCompleted: () => trackEvent('tutorial_completed'),
+  tutorialSkipped: (slideIndex) => trackEvent('tutorial_skipped', {
+    skip_slide: slideIndex
+  }),
+
   // Set user properties (for segmentation in Firebase)
   setUserArchetype: (archetype) => {
     if (analytics) {
