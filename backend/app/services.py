@@ -2145,6 +2145,177 @@ def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -
     return new_profile
 
 
+# ============================================================================
+# USERNAME SYSTEM
+# ============================================================================
+
+import re
+import string
+
+def generate_username_base(display_name: str) -> str:
+    """
+    Generate a base username from a display name.
+    Converts to lowercase, replaces spaces with dashes, removes special chars.
+    """
+    if not display_name:
+        return "user"
+
+    # Lowercase and replace spaces with dashes
+    base = display_name.lower().strip().replace(" ", "-")
+    # Remove special characters, keep only alphanumeric and dashes
+    base = re.sub(r'[^a-z0-9-]', '', base)
+    # Remove consecutive dashes
+    base = re.sub(r'-+', '-', base)
+    # Remove leading/trailing dashes
+    base = base.strip('-')
+
+    return base if base else "user"
+
+
+def generate_random_suffix(length: int = 4) -> str:
+    """Generate a random alphanumeric suffix."""
+    chars = string.ascii_lowercase + string.digits
+    return ''.join(random.choice(chars) for _ in range(length))
+
+
+def is_username_available(username: str) -> bool:
+    """Check if a username is available (not taken by another user)."""
+    if not username or len(username) < 3:
+        return False
+
+    profiles_ref = db.collection("user_profiles")
+    query = profiles_ref.where("username", "==", username.lower()).limit(1)
+    docs = list(query.stream())
+    return len(docs) == 0
+
+
+def generate_unique_username(display_name: str, max_attempts: int = 10) -> str:
+    """
+    Generate a unique username from a display name.
+    If the base username is taken, adds a random suffix.
+    """
+    base = generate_username_base(display_name)
+
+    # Try the base username first
+    if is_username_available(base):
+        return base
+
+    # Add random suffix until we find an available one
+    for _ in range(max_attempts):
+        suffix = generate_random_suffix()
+        candidate = f"{base}-{suffix}"
+        if is_username_available(candidate):
+            return candidate
+
+    # Fallback: use timestamp-based suffix
+    import time
+    return f"{base}-{int(time.time()) % 100000}"
+
+
+def set_username(profile_id: str, username: str, display_name: str = None) -> dict:
+    """
+    Set or update the username for a profile.
+
+    Args:
+        profile_id: Firestore profile document ID
+        username: The desired username (will be lowercased)
+        display_name: Optional display name to store
+
+    Returns:
+        dict with success status and the username
+    """
+    username = username.lower().strip()
+
+    # Validate username format
+    if not re.match(r'^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$', username):
+        return {"success": False, "error": "Username must be 3-30 characters, alphanumeric and dashes only"}
+
+    # Check if available
+    profiles_ref = db.collection("user_profiles")
+
+    # Check current profile
+    profile_doc = profiles_ref.document(profile_id)
+    profile = profile_doc.get().to_dict()
+
+    if not profile:
+        return {"success": False, "error": "Profile not found"}
+
+    # If this profile already has this username, it's fine
+    if profile.get("username") == username:
+        return {"success": True, "username": username}
+
+    # Check if taken by someone else
+    if not is_username_available(username):
+        return {"success": False, "error": "Username is already taken"}
+
+    # Update the profile
+    update_data = {
+        "username": username,
+        "username_set_at": time.time(),
+        "updated_at": time.time()
+    }
+    if display_name:
+        update_data["display_name"] = display_name
+
+    profile_doc.update(update_data)
+
+    return {"success": True, "username": username}
+
+
+def get_profile_by_username(username: str) -> dict:
+    """
+    Get a public profile view by username.
+
+    Returns:
+        dict with public profile data or None if not found
+    """
+    if not username:
+        return None
+
+    username = username.lower().strip()
+    profiles_ref = db.collection("user_profiles")
+    query = profiles_ref.where("username", "==", username).limit(1)
+    docs = list(query.stream())
+
+    if not docs:
+        return None
+
+    profile = docs[0].to_dict()
+    profile_id = docs[0].id
+
+    # Build public profile view (similar to get_profile_view but with username)
+    mode_profiles_summary = {}
+    for mode, data in profile.get("mode_profiles", {}).items():
+        if data.get("current_archetype"):
+            mode_profiles_summary[mode] = {
+                "current_archetype": data.get("current_archetype"),
+                "confidence": data.get("confidence", 0),
+                "stability": data.get("stability", "new"),
+                "tests_included": data.get("tests_included", 0),
+            }
+
+    deep_dive_summary = {}
+    for interest, data in profile.get("deep_dive_profiles", {}).items():
+        if data.get("current_archetype"):
+            deep_dive_summary[interest] = {
+                "current_archetype": data.get("current_archetype"),
+                "confidence": data.get("confidence", 0),
+                "stability": data.get("stability", "new"),
+                "tests_included": data.get("tests_included", 0),
+            }
+
+    return {
+        "profile_id": profile_id,
+        "username": profile.get("username"),
+        "display_name": profile.get("display_name"),
+        "mode_profiles": mode_profiles_summary,
+        "deep_dive_profiles": deep_dive_summary,
+        "current_archetype": profile.get("current_archetype"),
+        "member_since": profile.get("created_at"),
+        "total_tests": len(profile.get("test_history", [])),
+    }
+
+
 def update_profile_after_test(profile_id: str, session: dict, result: dict,
                               confidence: dict, suspicion: dict) -> dict:
     """
