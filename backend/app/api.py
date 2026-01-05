@@ -213,6 +213,16 @@ async def get_archetype_insights(archetype_id: str, mode: str = "concise"):
     if not insight:
         return {"error": f"Archetype '{archetype_id}' not found"}
 
+    # Handle collaboration_strengths - could be dict with concise/deep or array
+    collab_strengths = insight.get("collaboration_strengths", [])
+    if isinstance(collab_strengths, dict):
+        collab_strengths = collab_strengths.get("concise", [])
+
+    # Handle potential_blind_spots - could be dict with concise/deep or array
+    blind_spots = insight.get("potential_blind_spots", [])
+    if isinstance(blind_spots, dict):
+        blind_spots = blind_spots.get("concise", [])
+
     # Base response for both modes
     response = {
         "archetype_id": insight.get("archetype_id", archetype_id),
@@ -221,20 +231,32 @@ async def get_archetype_insights(archetype_id: str, mode: str = "concise"):
         "icon": insight.get("icon"),
         "color": insight.get("color"),
         "summary": insight.get("summary_concise"),
-        "collaboration_strengths": insight.get("collaboration_strengths", {}).get("concise", []),
-        "potential_blind_spots": insight.get("potential_blind_spots", {}).get("concise", []),
+        "collaboration_strengths": collab_strengths,
+        "potential_blind_spots": blind_spots,
         "actionable_tips": insight.get("actionable_tips", [])[:2],  # First 2 tips for concise
         "complementary_archetypes": insight.get("complementary_archetypes", []),
         "trait_profile": insight.get("trait_profile", {}),
+        # Always include quick_insights and team_context (punchy cards)
+        "quick_insights": insight.get("quick_insights"),
+        "team_context": insight.get("team_context"),
         "mode": "concise"
     }
 
     # Add deep content if requested
     if mode == "deep":
+        # Get deep version of strengths/blind spots
+        deep_collab = insight.get("collaboration_strengths", [])
+        if isinstance(deep_collab, dict):
+            deep_collab = deep_collab.get("deep", collab_strengths)
+
+        deep_blind = insight.get("potential_blind_spots", [])
+        if isinstance(deep_blind, dict):
+            deep_blind = deep_blind.get("deep", blind_spots)
+
         response.update({
             "summary": insight.get("summary_deep", insight.get("summary_concise")),
-            "collaboration_strengths": insight.get("collaboration_strengths", {}).get("deep", []),
-            "potential_blind_spots": insight.get("potential_blind_spots", {}).get("deep", []),
+            "collaboration_strengths": deep_collab,
+            "potential_blind_spots": deep_blind,
             "team_phases": insight.get("team_phases", {}),
             "energy_dynamics": insight.get("energy_dynamics", {}),
             "actionable_tips": insight.get("actionable_tips", []),  # All tips
