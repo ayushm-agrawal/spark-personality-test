@@ -36,9 +36,10 @@ function App() {
   const [error, setError] = useState(null);
 
   // Auth state
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [userHistory, setUserHistory] = useState([]);
   const [isViewingHistory, setIsViewingHistory] = useState(false);
+  const [isLoadingUserData, setIsLoadingUserData] = useState(false);
   const resultsSavedRef = useRef(false);
 
   // Holistic profile state
@@ -66,42 +67,47 @@ function App() {
   // Load user history and profile when authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
+      setIsLoadingUserData(true);
+
       // Ensure user profile exists
       ensureUserProfile(user).catch(console.error);
 
-      // Load assessment history and check if should show profile badge
-      getUserAssessments(user.uid)
-        .then(assessments => {
-          setUserHistory(assessments);
-          // If user has at least 1 assessment, check if they've seen profile
-          if (assessments.length > 0) {
-            getHasSeenProfile(user.uid)
-              .then(seen => setHasSeenProfile(seen))
-              .catch(() => setHasSeenProfile(true));
-          }
-        })
-        .catch(console.error);
-
-      // Get or create holistic profile and load full profile view
-      api.getOrCreateProfile(user.uid, null)
-        .then(async (profile) => {
-          if (profile && profile.profile_id) {
-            setProfileId(profile.profile_id);
-            // Load full profile view for ModeSelection
-            try {
-              const fullProfile = await api.getProfileView(profile.profile_id);
-              setHolisticProfile(fullProfile);
-            } catch (err) {
-              console.error('Failed to load profile view:', err);
+      // Load both in parallel and wait for completion
+      Promise.all([
+        // Load assessment history
+        getUserAssessments(user.uid)
+          .then(assessments => {
+            setUserHistory(assessments);
+            // If user has at least 1 assessment, check if they've seen profile
+            if (assessments.length > 0) {
+              getHasSeenProfile(user.uid)
+                .then(seen => setHasSeenProfile(seen))
+                .catch(() => setHasSeenProfile(true));
             }
-          }
-        })
-        .catch(console.error);
+          }),
+        // Get or create holistic profile and load full profile view
+        api.getOrCreateProfile(user.uid, null)
+          .then(async (profile) => {
+            if (profile && profile.profile_id) {
+              setProfileId(profile.profile_id);
+              // Load full profile view for ModeSelection
+              try {
+                const fullProfile = await api.getProfileView(profile.profile_id);
+                setHolisticProfile(fullProfile);
+              } catch (err) {
+                console.error('Failed to load profile view:', err);
+              }
+            }
+          })
+      ])
+        .catch(console.error)
+        .finally(() => setIsLoadingUserData(false));
     } else {
       setUserHistory([]);
       setProfileId(null);
       setHolisticProfile(null);
       setHasSeenProfile(true); // Reset to hide badge when logged out
+      setIsLoadingUserData(false);
     }
   }, [isAuthenticated, user]);
 
@@ -521,6 +527,15 @@ function App() {
     setDeepDiveInterest(null);
     setHolisticProfile(null);
   };
+
+  // Show loading screen while auth is initializing OR user data is loading (for authenticated users)
+  if (authLoading || (isAuthenticated && isLoadingUserData)) {
+    return (
+      <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-4 border-violet-500 border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
