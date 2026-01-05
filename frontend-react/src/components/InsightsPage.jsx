@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import * as api from '../api';
@@ -19,6 +19,27 @@ const rarityColors = {
   uncommon: '#22c55e',
   rare: '#3b82f6',
   legendary: '#f59e0b'
+};
+
+// Archetype display names for dream team
+const archetypeDisplayNames = {
+  architect: 'The Architect',
+  catalyst: 'The Catalyst',
+  strategist: 'The Strategist',
+  guide: 'The Guide',
+  alchemist: 'The Alchemist',
+  gardener: 'The Gardener',
+  luminary: 'The Luminary',
+  sentinel: 'The Sentinel'
+};
+
+// Mode context labels
+const modeContextLabels = {
+  pressure: 'Your archetype under pressure',
+  hackathon: 'Your archetype under pressure',
+  relationships: 'Your archetype in relationships',
+  overall: 'Your overall archetype',
+  deep_dive: 'Your deep dive archetype'
 };
 
 // Section component with expand/collapse
@@ -126,6 +147,263 @@ function ModeToggle({ mode, onChange }) {
   );
 }
 
+// Quick Insights Cards - always visible punchy cards
+function QuickInsightsCards({ quickInsights, color }) {
+  if (!quickInsights) return null;
+
+  const cards = [
+    { key: 'zone_of_genius', label: 'Zone of Genius', icon: '🎯', value: quickInsights.zone_of_genius },
+    { key: 'deepest_aspiration', label: 'Deepest Aspiration', icon: '💫', value: quickInsights.deepest_aspiration },
+    { key: 'growth_edge', label: 'Growth Edge', icon: '🌱', value: quickInsights.growth_edge }
+  ].filter(card => card.value);
+
+  if (cards.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      {cards.map((card, idx) => (
+        <motion.div
+          key={card.key}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: idx * 0.1 }}
+          className="p-4 rounded-2xl border"
+          style={{
+            backgroundColor: `${color}10`,
+            borderColor: `${color}30`
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xl">{card.icon}</span>
+            <span className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+              {card.label}
+            </span>
+          </div>
+          <p className="text-sm text-neutral-200 leading-relaxed">{card.value}</p>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
+// Stability Badge with tooltip
+function StabilityBadge({ stability, showTooltip = false }) {
+  const [tooltipVisible, setTooltipVisible] = useState(false);
+
+  const config = {
+    stable: {
+      label: 'Stable',
+      color: '#22c55e',
+      icon: '✓',
+      tooltip: 'Your results are consistent across multiple assessments. This is reliably you.'
+    },
+    converging: {
+      label: 'Emerging',
+      color: '#eab308',
+      icon: '→',
+      tooltip: "We're seeing a pattern form. One more test will give you a stable profile."
+    },
+    inconsistent: {
+      label: 'Variable',
+      color: '#f97316',
+      icon: '~',
+      tooltip: 'Your results vary between assessments. This could mean you\'re adaptable, or try answering more carefully.'
+    },
+    new: {
+      label: 'New',
+      color: '#a78bfa',
+      icon: '★',
+      tooltip: 'Take more tests to confirm your archetype and build a stable profile.'
+    },
+  };
+
+  const { label, color, icon, tooltip } = config[stability] || config.new;
+
+  return (
+    <div className="relative inline-block">
+      <div
+        className="inline-flex items-center gap-1.5 rounded-full font-medium cursor-help text-sm px-3 py-1"
+        style={{ backgroundColor: `${color}20`, color }}
+        onMouseEnter={() => showTooltip && setTooltipVisible(true)}
+        onMouseLeave={() => showTooltip && setTooltipVisible(false)}
+        onClick={() => showTooltip && setTooltipVisible(!tooltipVisible)}
+      >
+        <span>{icon}</span>
+        <span>{label}</span>
+        {showTooltip && (
+          <svg className="w-3.5 h-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {showTooltip && tooltipVisible && (
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 5 }}
+            className="absolute z-50 top-full mt-2 left-1/2 -translate-x-1/2 w-64 p-3 bg-neutral-800 border border-neutral-700 rounded-xl shadow-lg text-sm text-neutral-300"
+          >
+            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-neutral-800 border-l border-t border-neutral-700" />
+            {tooltip}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// Stability Guidance component for non-stable profiles
+function StabilityGuidance({ stability, testsCompleted = 0, testsForStable = 3, onRetake, assessmentMode }) {
+  if (stability === 'stable') return null;
+
+  const modeLabel = assessmentMode === 'hackathon' ? 'Under Pressure' : assessmentMode;
+
+  const config = {
+    new: {
+      icon: '🌱',
+      title: 'New Profile',
+      message: `This is your first assessment${modeLabel ? ` for ${modeLabel}` : ''}. Take ${testsForStable - testsCompleted} more to build a reliable profile.`,
+      cta: 'Take Another Test'
+    },
+    converging: {
+      icon: '🌿',
+      title: 'Emerging Profile',
+      message: "We're seeing a pattern! One more consistent test will confirm your archetype.",
+      cta: 'Confirm Your Profile'
+    },
+    inconsistent: {
+      icon: '🔄',
+      title: 'Variable Profile',
+      message: "Your results vary between assessments. This is okay — it might mean you're adaptable, or that some tests were rushed.",
+      cta: 'Retake Assessment'
+    }
+  };
+
+  const { icon, title, message, cta } = config[stability] || config.new;
+  const progress = Math.min((testsCompleted / testsForStable) * 100, 100);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-8 p-5 bg-neutral-900/60 border border-neutral-800 rounded-2xl"
+    >
+      <div className="flex items-start gap-4">
+        <span className="text-3xl">{icon}</span>
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-white mb-1">{title}</h3>
+          <p className="text-sm text-neutral-400 mb-4">{message}</p>
+
+          {stability !== 'inconsistent' && (
+            <div className="mb-4">
+              <div className="flex justify-between text-xs text-neutral-500 mb-1">
+                <span>Progress</span>
+                <span>{testsCompleted}/{testsForStable} tests</span>
+              </div>
+              <div className="h-2 bg-neutral-800 rounded-full overflow-hidden">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                  className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full"
+                />
+              </div>
+            </div>
+          )}
+
+          {stability === 'inconsistent' && (
+            <div className="text-sm text-neutral-500 mb-4">
+              <p className="mb-2">For a clearer profile:</p>
+              <ul className="space-y-1 ml-4">
+                <li>• Take another test when you have 5 quiet minutes</li>
+                <li>• Answer based on your typical behavior, not today's mood</li>
+                <li>• If results keep varying, you might genuinely be context-dependent</li>
+              </ul>
+            </div>
+          )}
+
+          {onRetake && (
+            <button
+              onClick={() => onRetake(assessmentMode)}
+              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-xl transition-colors"
+            >
+              {cta}
+            </button>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// Team Context section
+function TeamContext({ teamContext, color, navigate }) {
+  if (!teamContext) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mb-8 p-6 bg-neutral-900/60 border border-neutral-800 rounded-2xl"
+    >
+      <h3 className="text-lg font-semibold text-white mb-4">Your Team Role</h3>
+
+      {/* Role Card */}
+      {teamContext.role_title && (
+        <div
+          className="p-4 rounded-xl mb-4"
+          style={{ backgroundColor: `${color}15`, borderLeft: `3px solid ${color}` }}
+        >
+          <h4 className="font-semibold text-white text-lg">{teamContext.role_title}</h4>
+          {teamContext.role_description && (
+            <p className="text-sm text-neutral-300 mt-1">{teamContext.role_description}</p>
+          )}
+        </div>
+      )}
+
+      {/* Dream Team */}
+      {teamContext.dream_team?.length > 0 && (
+        <div className="mb-4">
+          <h4 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-3">
+            Dream Team
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {teamContext.dream_team.map((archetypeId) => (
+              <button
+                key={archetypeId}
+                onClick={() => navigate(`/insights/${archetypeId}`)}
+                className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 rounded-lg text-sm text-white transition-colors"
+              >
+                {archetypeDisplayNames[archetypeId] || archetypeId}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Creative Partner */}
+      {teamContext.creative_partner && (
+        <div>
+          <h4 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-3">
+            Ideal Creative Partner
+          </h4>
+          <button
+            onClick={() => navigate(`/insights/${teamContext.creative_partner}`)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl transition-colors"
+            style={{ backgroundColor: `${color}20`, color }}
+          >
+            <span className="text-lg">✨</span>
+            <span className="font-medium">
+              {archetypeDisplayNames[teamContext.creative_partner] || teamContext.creative_partner}
+            </span>
+          </button>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
 // Trait bar component
 function TraitBar({ trait, score, color }) {
   return (
@@ -186,8 +464,12 @@ function ReadingProgress({ sectionsRead, totalSections }) {
 
 export default function InsightsPage() {
   const { archetypeId } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+
+  // Get mode context from URL params (e.g., ?mode=pressure)
+  const modeContext = searchParams.get('mode');
 
   const [insights, setInsights] = useState(null);
   const [mode, setMode] = useState('concise');
@@ -197,19 +479,20 @@ export default function InsightsPage() {
   const [badges, setBadges] = useState(null);
   const [sectionsViewed, setSectionsViewed] = useState(new Set());
   const [newBadges, setNewBadges] = useState([]);
+  const [profileStability, setProfileStability] = useState(null);
+  const [testsCompleted, setTestsCompleted] = useState(0);
 
-  // Total sections in deep mode
-  const totalSections = mode === 'deep' ? 8 : 5;
+  // Total sections: deep has 7 (summary, strengths, blind_spots, team_phases, energy, tips, complementary)
+  // Concise has 5 (summary, strengths, blind_spots, tips, complementary)
+  const totalSections = mode === 'deep' ? 7 : 5;
 
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        // Load insights
-        const insightsData = await api.getArchetypeInsights(archetypeId, mode);
-        setInsights(insightsData);
+        let preferredMode = mode;
 
-        // Load user profile and preferences if authenticated
+        // First, get user preferences to know the correct mode
         if (user) {
           const profileData = await api.getOrCreateProfile(user.uid, null);
           if (profileData?.profile_id) {
@@ -218,17 +501,39 @@ export default function InsightsPage() {
             // Track app open for weekly wanderer badge
             await api.trackAppOpen(profileData.profile_id);
 
-            // Get user preferences
+            // Get user preferences FIRST to know the correct mode
             const prefs = await api.getUserPreferences(profileData.profile_id);
             if (prefs.insight_mode) {
+              preferredMode = prefs.insight_mode;
               setMode(prefs.insight_mode);
             }
 
             // Get badges
             const badgeData = await api.getBadges(profileData.profile_id);
             setBadges(badgeData);
+
+            // Get full profile to check stability
+            try {
+              const fullProfile = await api.getProfileView(profileData.profile_id);
+              // Get stability from the relevant mode context or overall
+              const relevantMode = modeContext || 'hackathon';
+              const modeProfile = fullProfile.mode_profiles?.[relevantMode];
+              if (modeProfile) {
+                setProfileStability(modeProfile.stability || 'new');
+                setTestsCompleted(modeProfile.tests_included || 0);
+              } else {
+                setProfileStability('new');
+                setTestsCompleted(fullProfile.total_tests || 0);
+              }
+            } catch (err) {
+              console.error('Failed to load profile for stability:', err);
+            }
           }
         }
+
+        // Now load insights with the correct mode
+        const insightsData = await api.getArchetypeInsights(archetypeId, preferredMode);
+        setInsights(insightsData);
       } catch (err) {
         console.error('Failed to load insights:', err);
         setError('Failed to load insights');
@@ -238,7 +543,7 @@ export default function InsightsPage() {
     };
 
     loadData();
-  }, [archetypeId, user]);
+  }, [archetypeId, user, modeContext]);
 
   // Reload insights when mode changes
   useEffect(() => {
@@ -290,6 +595,16 @@ export default function InsightsPage() {
       console.error('Failed to track time:', err);
     }
   };
+
+  // Auto-dismiss badge toast after 5 seconds
+  useEffect(() => {
+    if (newBadges.length > 0) {
+      const timer = setTimeout(() => {
+        setNewBadges([]);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [newBadges]);
 
   if (isLoading) {
     return (
@@ -345,11 +660,22 @@ export default function InsightsPage() {
 
       {/* Content */}
       <div className="max-w-3xl mx-auto px-4 py-8">
+        {/* Mode Context Banner */}
+        {modeContext && modeContextLabels[modeContext] && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 px-4 py-2 bg-violet-500/10 border border-violet-500/30 rounded-xl text-center"
+          >
+            <span className="text-sm text-violet-300">{modeContextLabels[modeContext]}</span>
+          </motion.div>
+        )}
+
         {/* Hero Section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-10"
+          className="text-center mb-8"
         >
           <div
             className="w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center text-4xl"
@@ -358,8 +684,32 @@ export default function InsightsPage() {
             {insights.icon || '✨'}
           </div>
           <h1 className="text-4xl font-bold text-white mb-2">{insights.display_name}</h1>
-          <p className="text-xl text-neutral-400 italic">{insights.tagline}</p>
+          <p className="text-xl text-neutral-400 italic mb-3">{insights.tagline}</p>
+
+          {/* Stability Badge */}
+          {profileStability && (
+            <div className="mt-3">
+              <StabilityBadge stability={profileStability} showTooltip={true} />
+            </div>
+          )}
         </motion.div>
+
+        {/* Quick Insights Cards - Always visible */}
+        <QuickInsightsCards quickInsights={insights.quick_insights} color={archetypeColor} />
+
+        {/* Stability Guidance for non-stable profiles */}
+        {profileStability && profileStability !== 'stable' && (
+          <StabilityGuidance
+            stability={profileStability}
+            testsCompleted={testsCompleted}
+            testsForStable={3}
+            assessmentMode={modeContext || 'hackathon'}
+            onRetake={(mode) => {
+              // Navigate to home with mode param to auto-start test
+              navigate(`/?startMode=${mode || 'hackathon'}`);
+            }}
+          />
+        )}
 
         {/* Trait Profile */}
         {insights.trait_profile && Object.keys(insights.trait_profile).length > 0 && (
@@ -405,8 +755,8 @@ export default function InsightsPage() {
           {Array.isArray(insights.collaboration_strengths) ? (
             <ul className="space-y-3">
               {insights.collaboration_strengths.map((strength, idx) => (
-                <li key={idx} className="flex items-start gap-3">
-                  <span className="text-green-400 mt-1">+</span>
+                <li key={idx} className="flex items-baseline gap-3">
+                  <span className="text-green-400 text-lg leading-none">+</span>
                   <span className="text-neutral-300">{strength}</span>
                 </li>
               ))}
@@ -430,8 +780,8 @@ export default function InsightsPage() {
           {Array.isArray(insights.potential_blind_spots) ? (
             <ul className="space-y-3">
               {insights.potential_blind_spots.map((blindSpot, idx) => (
-                <li key={idx} className="flex items-start gap-3">
-                  <span className="text-yellow-400 mt-1">!</span>
+                <li key={idx} className="flex items-baseline gap-3">
+                  <span className="text-yellow-400 text-lg leading-none">!</span>
                   <span className="text-neutral-300">{blindSpot}</span>
                 </li>
               ))}
@@ -455,12 +805,25 @@ export default function InsightsPage() {
               onView={handleSectionView}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {Object.entries(insights.team_phases).map(([phase, description]) => (
+                {Object.entries(insights.team_phases).map(([phase, data]) => (
                   <div key={phase} className="p-4 bg-neutral-800/50 rounded-xl">
                     <h4 className="text-sm font-medium text-violet-400 uppercase tracking-wider mb-2">
                       {phase.replace('_', ' ')}
                     </h4>
-                    <p className="text-sm text-neutral-300">{description}</p>
+                    {typeof data === 'object' ? (
+                      <div className="space-y-2">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-green-400 leading-none">+</span>
+                          <p className="text-sm text-neutral-300">{data.strength}</p>
+                        </div>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-yellow-400 leading-none">!</span>
+                          <p className="text-sm text-neutral-400">{data.watch_for}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-neutral-300">{data}</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -479,13 +842,13 @@ export default function InsightsPage() {
               onView={handleSectionView}
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {insights.energy_dynamics.energizes && (
+                {(insights.energy_dynamics.energized_by || insights.energy_dynamics.energizes) && (
                   <div>
                     <h4 className="text-green-400 font-medium mb-3 flex items-center gap-2">
                       <span>+</span> What Energizes You
                     </h4>
                     <ul className="space-y-2">
-                      {insights.energy_dynamics.energizes.map((item, idx) => (
+                      {(insights.energy_dynamics.energized_by || insights.energy_dynamics.energizes).map((item, idx) => (
                         <li key={idx} className="text-sm text-neutral-300 flex items-start gap-2">
                           <span className="text-green-400">•</span>
                           {item}
@@ -494,13 +857,13 @@ export default function InsightsPage() {
                     </ul>
                   </div>
                 )}
-                {insights.energy_dynamics.drains && (
+                {(insights.energy_dynamics.drained_by || insights.energy_dynamics.drains) && (
                   <div>
                     <h4 className="text-red-400 font-medium mb-3 flex items-center gap-2">
                       <span>-</span> What Drains You
                     </h4>
                     <ul className="space-y-2">
-                      {insights.energy_dynamics.drains.map((item, idx) => (
+                      {(insights.energy_dynamics.drained_by || insights.energy_dynamics.drains).map((item, idx) => (
                         <li key={idx} className="text-sm text-neutral-300 flex items-start gap-2">
                           <span className="text-red-400">•</span>
                           {item}
@@ -531,9 +894,15 @@ export default function InsightsPage() {
                 >
                   {idx + 1}
                 </div>
-                <div>
-                  <h4 className="font-medium text-white mb-1">{tip.title}</h4>
-                  <p className="text-sm text-neutral-400">{tip.description}</p>
+                <div className="flex-1">
+                  {typeof tip === 'object' ? (
+                    <>
+                      <h4 className="font-medium text-white mb-1">{tip.title}</h4>
+                      <p className="text-sm text-neutral-400">{tip.description}</p>
+                    </>
+                  ) : (
+                    <p className="text-neutral-300">{tip}</p>
+                  )}
                 </div>
               </div>
             ))}
@@ -542,8 +911,17 @@ export default function InsightsPage() {
 
         <div className="h-4" />
 
-        {/* Complementary Archetypes */}
-        {insights.complementary_archetypes?.length > 0 && (
+        {/* Team Context - Role, Dream Team, Creative Partner */}
+        {insights.team_context && (
+          <TeamContext
+            teamContext={insights.team_context}
+            color={archetypeColor}
+            navigate={navigate}
+          />
+        )}
+
+        {/* Complementary Archetypes - only show if no team_context */}
+        {!insights.team_context && insights.complementary_archetypes?.length > 0 && (
           <InsightSection
             title="You Work Well With"
             icon="🤝"
