@@ -17,8 +17,13 @@ export async function getArchetypes() {
  * Get a single archetype by name
  */
 export async function getArchetypeByName(name) {
-  const archetypes = await getArchetypes();
-  return archetypes.find(a => a.name === name);
+  const response = await getArchetypes();
+  // API returns {archetypes: {"The Architect": {...}, ...}}
+  const archetypeData = response.archetypes?.[name];
+  if (archetypeData) {
+    return { name, ...archetypeData };
+  }
+  return null;
 }
 
 /**
