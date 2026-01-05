@@ -270,5 +270,6 @@ def get_archetype_for_display(archetype_name: str) -> dict:
         "hackathon_superpower": archetype.get("hackathon_superpower", ""),
         "hackathon_pitfall": archetype.get("hackathon_pitfall", ""),
         "ideal_partners": compatibility.get("ideal_partners", []),
-        "growth_partners": compatibility.get("growth_partners", [])
+        "growth_partners": compatibility.get("growth_partners", []),
+        "big_five_profile": archetype.get("big_five_profile", {})
     }
