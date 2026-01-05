@@ -210,7 +210,7 @@ export default function TutorialModal({ onComplete, onSlideView }) {
                       ? 'bg-violet-500 w-6'
                       : index < currentSlide
                       ? 'bg-violet-500/50 w-2'
-                      : 'bg-neutral-700 w-2'
+                      : 'bg-neutral-500 w-2'
                   }`}
                 />
               </button>
