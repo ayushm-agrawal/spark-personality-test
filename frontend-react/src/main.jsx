@@ -6,17 +6,20 @@ import './index.css'
 import App from './App.jsx'
 import PublicProfile from './components/PublicProfile.jsx'
 import { AuthProvider } from './contexts/AuthContext'
+import { ThemeProvider } from './contexts/ThemeContext'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route path="/" element={<App />} />
-          <Route path="/u/:username" element={<PublicProfile />} />
-        </Routes>
-        <SpeedInsights />
-      </AuthProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<App />} />
+            <Route path="/u/:username" element={<PublicProfile />} />
+          </Routes>
+          <SpeedInsights />
+        </AuthProvider>
+      </BrowserRouter>
+    </ThemeProvider>
   </StrictMode>,
 )
