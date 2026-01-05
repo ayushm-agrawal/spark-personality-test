@@ -680,40 +680,44 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, zoneOf
                 </div>
               )}
 
-              {/* Top 3 Trait Scores */}
-              <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                gap: '8px',
-                marginTop: '12px',
-              }}>
-                {[...traits]
-                  .sort((a, b) => b.value - a.value)
-                  .slice(0, 3)
-                  .map((trait) => (
-                    <div
-                      key={trait.name}
-                      style={{
-                        textAlign: 'center',
-                        padding: '6px 10px',
-                        borderRadius: '8px',
-                        backgroundColor: 'rgba(241, 245, 249, 0.08)',
-                      }}
-                    >
-                      <div style={{ color: trait.color, fontSize: '16px', fontWeight: '700' }}>
-                        {Math.round(trait.value)}%
+              {/* Top 3 Trait Scores - only show if we have score data */}
+              {traits.length > 0 && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  marginTop: '12px',
+                }}>
+                  {[...traits]
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 3)
+                    .map((trait) => (
+                      <div
+                        key={trait.name}
+                        style={{
+                          textAlign: 'center',
+                          padding: '6px 10px',
+                          borderRadius: '8px',
+                          backgroundColor: 'rgba(241, 245, 249, 0.08)',
+                        }}
+                      >
+                        <div style={{ color: trait.color, fontSize: '16px', fontWeight: '700' }}>
+                          {Math.round(trait.value)}%
+                        </div>
+                        <div style={{ color: 'rgba(241, 245, 249, 0.6)', fontSize: '9px' }}>
+                          {trait.full}
+                        </div>
                       </div>
-                      <div style={{ color: 'rgba(241, 245, 249, 0.6)', fontSize: '9px' }}>
-                        {trait.full}
-                      </div>
-                    </div>
-                  ))}
-              </div>
+                    ))}
+                </div>
+              )}
 
-              {/* Radar Chart - smaller */}
-              <div className="mt-1">
-                <RadarChart traits={traits} size={140} color={archetypeColor} />
-              </div>
+              {/* Radar Chart - only show if we have score data */}
+              {traits.length > 0 && (
+                <div className="mt-1">
+                  <RadarChart traits={traits} size={140} color={archetypeColor} />
+                </div>
+              )}
             </div>
 
             {/* Social proof section */}
