@@ -25,11 +25,15 @@ export async function getArchetypes() {
   return response.json();
 }
 
-export async function startTest(mode = 'overall') {
+export async function startTest(mode = 'overall', interest = null) {
+  const body = { mode };
+  if (interest) {
+    body.interest = interest;
+  }
   const response = await fetch(`${API_BASE}/start-test/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error('Failed to start test');
   return response.json();
@@ -81,5 +85,25 @@ export async function submitFeedback(sessionId, rating, archetype) {
     }),
   });
   if (!response.ok) throw new Error('Failed to submit feedback');
+  return response.json();
+}
+
+export async function checkExtension(sessionId) {
+  const response = await fetch(`${API_BASE}/check-extension/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!response.ok) throw new Error('Failed to check extension');
+  return response.json();
+}
+
+export async function acceptExtension(sessionId) {
+  const response = await fetch(`${API_BASE}/accept-extension/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!response.ok) throw new Error('Failed to accept extension');
   return response.json();
 }

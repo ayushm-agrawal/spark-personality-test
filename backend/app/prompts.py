@@ -178,8 +178,23 @@ FORBIDDEN:
 - Obviously leading questions
 {% endif %}
 
-{% if mode == 'deep_dive' and life_contexts %}
-## Deep Dive Mode Instructions
+{% if mode == 'deep_dive' and single_interest %}
+## Deep Dive Mode Instructions - Single Interest Focus
+**CONTEXT: All questions must be set within the user's specified interest area: {{ single_interest }}**
+
+Frame EVERY scenario around this specific context. Examples:
+- If interest is "Work", ask about workplace situations, meetings, deadlines, colleagues
+- If interest is "Fitness", ask about gym, training, health decisions, motivation
+- If interest is "My relationship with my partner", ask about communication, decisions, conflicts, support
+
+**CRITICAL RULES:**
+1. Every single question must clearly relate to "{{ single_interest }}"
+2. Do NOT ask generic life questions
+3. Use specific, vivid scenarios within this context
+4. The user should feel like they're exploring how they show up specifically in {{ single_interest }}
+
+{% elif mode == 'deep_dive' and life_contexts %}
+## Deep Dive Mode Instructions - Multiple Contexts
 User selected these life contexts: {{ life_contexts | join(', ') }}
 
 **CRITICAL: Use ONE context per question, rotating through the list.**
@@ -301,7 +316,8 @@ def render_system_prompt(
     inferred_tendencies: Optional[List[str]] = None,
     focused_traits: Optional[List[str]] = None,
     questions_per_trait: int = 2,
-    trait_needs: Optional[Dict] = None
+    trait_needs: Optional[Dict] = None,
+    single_interest: Optional[str] = None
 ) -> str:
     """
     Render the system prompt with session-specific context.
@@ -320,6 +336,7 @@ def render_system_prompt(
         context_scenario_hooks: Scenario ideas for current context
         traits_assessed: List of traits already assessed
         inferred_tendencies: List of inferred personality tendencies
+        single_interest: Single interest/context for deep_dive mode (new single-interest flow)
 
     Returns:
         Rendered system prompt string
@@ -342,7 +359,8 @@ def render_system_prompt(
         inferred_tendencies=inferred_tendencies or [],
         focused_traits=focused_traits or [],
         questions_per_trait=questions_per_trait,
-        trait_needs=trait_needs or {}
+        trait_needs=trait_needs or {},
+        single_interest=single_interest
     )
 
 

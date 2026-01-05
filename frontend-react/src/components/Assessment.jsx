@@ -127,79 +127,6 @@ function AnalyzingAnimation() {
   );
 }
 
-// Trait visualization bar at bottom - shows emerging profile as questions are answered
-function TraitBar({ questionNumber, totalQuestions }) {
-  // Simulate trait values building up based on progress
-  const progress = questionNumber / totalQuestions;
-  const traits = traitConfig.map((t, i) => ({
-    ...t,
-    value: Math.min(100, Math.floor(30 + progress * 50 + Math.sin(i * 1.5 + questionNumber) * 20))
-  }));
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 30, scale: 0.9 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ delay: 0.8, duration: 0.5, ease: "easeOut" }}
-      className="fixed bottom-4 left-4 bg-neutral-900/90 backdrop-blur-sm border border-neutral-800 rounded-xl p-3 md:p-4"
-    >
-      {/* Label */}
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.9 }}
-        className="text-[9px] md:text-[10px] text-neutral-500 mb-2 text-center uppercase tracking-wider"
-      >
-        Your Profile So Far
-      </motion.p>
-
-      <div className="flex items-end gap-2 md:gap-3">
-        {traits.map((trait, i) => (
-          <motion.div
-            key={trait.name}
-            className="flex flex-col items-center gap-1"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1 + i * 0.1, duration: 0.4 }}
-          >
-            {/* Percentage label */}
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.4 + i * 0.1 }}
-              className="text-[10px] md:text-xs font-semibold"
-              style={{ color: trait.color }}
-            >
-              {trait.value}%
-            </motion.span>
-
-            {/* Bar */}
-            <div className="w-2 md:w-2.5 h-12 md:h-16 bg-neutral-800 rounded-full overflow-hidden relative">
-              <motion.div
-                className="absolute bottom-0 w-full rounded-full"
-                style={{ backgroundColor: trait.color }}
-                initial={{ height: 0 }}
-                animate={{ height: `${trait.value}%` }}
-                transition={{ delay: 1.2 + i * 0.15, duration: 0.8, ease: "easeOut" }}
-              />
-            </div>
-
-            {/* Full trait name */}
-            <motion.span
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 1.5 + i * 0.1 }}
-              className="text-[8px] md:text-[10px] font-medium whitespace-nowrap"
-              style={{ color: trait.color }}
-            >
-              {trait.full}
-            </motion.span>
-          </motion.div>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
 
 // Typewriter effect component for the header
 function TypewriterText({ text, onComplete, className = "" }) {
@@ -406,8 +333,8 @@ export default function Assessment({
         </div>
       </div>
 
-      {/* Main content - extra bottom padding for TraitBar clearance */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 md:px-6 py-4 md:py-0 pb-32 md:pb-40">
+      {/* Main content */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 md:px-6 py-4 md:py-8">
         <AnimatePresence mode="wait">
           {/* TRANSITION SCREEN - Shows answer + typewriter header */}
           {isInTransition ? (
@@ -634,8 +561,6 @@ export default function Assessment({
         </AnimatePresence>
       </div>
 
-      {/* Trait visualization bar */}
-      <TraitBar questionNumber={questionNumber} totalQuestions={totalQuestions} />
 
       {/* Keyboard shortcuts - only on large screens */}
       {isMultipleChoice && !isInTransition && (

@@ -12,7 +12,9 @@ from typing import Optional
 from fastapi import APIRouter, BackgroundTasks
 from services import (
     start_test, submit_response, continue_test, get_results,
-    select_interests, store_feedback, _init_prefetcher_if_needed
+    select_interests, store_feedback, _init_prefetcher_if_needed,
+    get_extension_opportunity, accept_extension,
+    generate_device_fingerprint, get_or_create_profile, update_profile_after_test
 )
 from prefetch import get_prefetcher, init_prefetcher
 from models import UserResponse, InterestSelection, FeedbackResponse
@@ -70,10 +72,12 @@ class StartTestRequest(BaseModel):
     Request model for starting a new test session.
 
     Attributes:
-        mode (str): The assessment mode - 'hackathon', 'overall', or 'interest'.
+        mode (str): The assessment mode - 'hackathon', 'overall', or 'deep_dive'.
                     Defaults to 'overall'.
+        interest (str): Optional single interest for deep_dive mode (e.g., "Work", "Fitness").
     """
     mode: Optional[str] = "overall"
+    interest: Optional[str] = None
 
 
 @router.get("/assessment-modes/")
@@ -177,11 +181,12 @@ async def start(request: Optional[StartTestRequest] = None, background_tasks: Ba
             - interest_config: Interest/context selection config (if needed)
     """
     mode = request.mode if request else "overall"
+    interest = request.interest if request else None
     # Normalize legacy mode name
     if mode == "interest":
         mode = "deep_dive"
 
-    result = start_test(mode=mode)
+    result = start_test(mode=mode, interest=interest)
 
     # If first question was returned (hackathon mode), trigger prefetch
     if background_tasks and "next_question" in result:
@@ -340,3 +345,133 @@ async def prefetch_stats():
     stats = prefetcher.get_stats()
     stats["enabled"] = True
     return stats
+
+
+@router.post("/check-extension/")
+async def check_extension(request: SessionRequest):
+    """
+    Check if the test should offer an extension for more accurate results.
+
+    Called after the last standard question to determine if the user should be
+    offered 2 additional clarifying questions.
+
+    Args:
+        request (SessionRequest): A request containing the session ID.
+
+    Returns:
+        dict: A dictionary containing:
+            - offer_extension: Boolean indicating if extension should be offered
+            - suggested_questions: Number of additional questions (always 2)
+            - focus_traits: List of traits that need more signal
+            - message: User-facing explanation
+    """
+    return get_extension_opportunity(request.session_id)
+
+
+@router.post("/accept-extension/")
+async def accept_extension_api(request: SessionRequest, background_tasks: BackgroundTasks):
+    """
+    Accept the test extension and generate the first clarifying question.
+
+    This adds 2 more questions to the test, focused on ambiguous traits.
+
+    Args:
+        request (SessionRequest): A request containing the session ID.
+        background_tasks: FastAPI BackgroundTasks for async prefetching.
+
+    Returns:
+        dict: A dictionary containing:
+            - extension_accepted: True if successful
+            - new_question_count: Updated total question count
+            - focus_traits: Traits being clarified
+            - next_question: First clarifying question
+    """
+    result = accept_extension(request.session_id)
+
+    # If question was returned, trigger prefetch
+    if "next_question" in result and result["next_question"]:
+        next_q = result["next_question"]
+        predictions = next_q.pop("_predicted_next", None) if isinstance(next_q, dict) else None
+
+        if predictions and predictions.get("probabilities"):
+            question_id = next_q.get("id", "")
+            probs = predictions.get("probabilities", {})
+            api_logger.info(f"[API] Extension question - scheduling prefetch: {probs}")
+
+            background_tasks.add_task(
+                trigger_prefetch,
+                request.session_id,
+                question_id,
+                probs
+            )
+
+    return result
+
+
+class ProfileRequest(BaseModel):
+    """
+    Request model for profile-related endpoints.
+
+    Attributes:
+        user_id: Firebase auth UID (optional)
+        device_fingerprint: Device fingerprint hash (optional)
+    """
+    user_id: Optional[str] = None
+    device_fingerprint: Optional[str] = None
+
+
+@router.post("/get-profile/")
+async def get_profile(request: ProfileRequest):
+    """
+    Get or create a user profile.
+
+    Uses user_id (Firebase auth) or device_fingerprint to identify returning users.
+    If both are provided and a fingerprint-based profile exists without a user_id,
+    the user_id will be linked (account linking).
+
+    Args:
+        request (ProfileRequest): Contains user_id and/or device_fingerprint.
+
+    Returns:
+        dict: User profile with cumulative scores, test history, and current archetype.
+    """
+    return get_or_create_profile(
+        user_id=request.user_id,
+        device_fingerprint=request.device_fingerprint
+    )
+
+
+class UpdateProfileRequest(BaseModel):
+    """Request model for updating profile after test."""
+    profile_id: str
+    session_id: str
+
+
+@router.post("/update-profile/")
+async def update_profile(request: UpdateProfileRequest):
+    """
+    Update user profile after completing a test.
+
+    This should be called after finalize_test to update the user's
+    cumulative scores, test history, and current archetype.
+
+    Args:
+        request (UpdateProfileRequest): Contains profile_id and session_id.
+
+    Returns:
+        dict: Updated profile data.
+    """
+    from firebase import db
+
+    # Get session data
+    session_doc = db.collection("sessions").document(request.session_id)
+    session = session_doc.get().to_dict()
+    if not session:
+        return {"error": "Invalid session"}
+
+    # Get results from session if finalized
+    results = session.get("results", {})
+    if not results:
+        return {"error": "Test not finalized yet"}
+
+    return update_profile_after_test(request.profile_id, session, results)
