@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Analytics } from '../services/analytics';
+import YourArchetypes from './YourArchetypes';
 
 // Custom Mode Icons (SVG) - replaces emojis for better accessibility
 const ModeIcons = {
@@ -92,26 +93,26 @@ const ModeIcons = {
 const modes = [
   {
     id: 'hackathon',
-    title: 'Hackathon',
-    subtitle: 'Build Mode',
+    title: 'Team Crunch',
+    subtitle: 'How you collaborate under pressure',
     duration: '2 min',
     questions: 6,
-    description: 'How you collaborate under pressure. Skip the setup, start building.',
+    description: 'When deadlines hit and stakes are high, who are you? Perfect for hackathons, startup sprints, and group projects.',
     colors: {
       primary: '#fb923c',
       text: '#fdba74',
       glow: 'rgba(251, 146, 60, 0.15)',
       border: 'rgba(251, 146, 60, 0.3)'
     },
-    tagline: 'Ship or sink.'
+    tagline: 'Pressure reveals character.'
   },
   {
     id: 'overall',
     title: 'Full Profile',
-    subtitle: 'Life Mode',
+    subtitle: 'Complete Picture',
     duration: '5 min',
     questions: 10,
-    description: 'Your personality across all dimensions. The complete picture.',
+    description: 'Your personality across all dimensions. The full you.',
     colors: {
       primary: '#a78bfa',
       text: '#c4b5fd',
@@ -124,7 +125,7 @@ const modes = [
   {
     id: 'deep_dive',
     title: 'Deep Dive',
-    subtitle: 'Focus Mode',
+    subtitle: 'Context Lens',
     duration: '5 min',
     questions: 10,
     description: 'Pick one area of life—work, relationships, anything—and discover how you show up there.',
@@ -134,12 +135,109 @@ const modes = [
       glow: 'rgba(45, 212, 191, 0.15)',
       border: 'rgba(45, 212, 191, 0.3)'
     },
-    tagline: 'Your context. Your truth.'
+    tagline: 'Same person, different context.'
   }
 ];
 
-export default function ModeSelection({ onSelectMode, userHistory = [], onViewHistory, onViewGallery }) {
+// Mode display labels mapping (internal -> user-facing)
+const modeDisplayLabels = {
+  hackathon: 'Team Crunch',
+  overall: 'Full Profile',
+  deep_dive: 'Deep Dive'
+};
+
+// Helper to get display label for a mode
+const getModeDisplayLabel = (mode, interest = null) => {
+  if (mode === 'deep_dive' && interest) {
+    // Capitalize first letter of interest
+    const capitalizedInterest = interest.charAt(0).toUpperCase() + interest.slice(1);
+    return capitalizedInterest;
+  }
+  return modeDisplayLabels[mode] || mode;
+};
+
+// Progress indicator component
+function ProgressIndicator({ mode, testsCount, stability, deepDiveInterests = 0 }) {
+  const isDeepDive = mode === 'deep_dive';
+
+  if (isDeepDive) {
+    if (deepDiveInterests === 0) {
+      return <span className="text-neutral-500">Not started</span>;
+    }
+    return (
+      <span className="text-teal-400">
+        {deepDiveInterests} area{deepDiveInterests !== 1 ? 's' : ''} explored
+      </span>
+    );
+  }
+
+  if (testsCount === 0) {
+    return <span className="text-neutral-500">Not started</span>;
+  }
+
+  if (stability === 'stable') {
+    return <span className="text-green-400">Stable profile</span>;
+  }
+
+  if (stability === 'inconsistent') {
+    return <span className="text-orange-400">Results vary</span>;
+  }
+
+  if (testsCount >= 3) {
+    return <span className="text-green-400">Stable profile</span>;
+  }
+
+  if (testsCount === 1) {
+    return <span className="text-yellow-400">1 test - take another to confirm</span>;
+  }
+
+  if (testsCount === 2) {
+    return <span className="text-yellow-400">2 tests - one more for stable profile</span>;
+  }
+
+  return <span className="text-neutral-500">{testsCount} tests</span>;
+}
+
+export default function ModeSelection({ onSelectMode, userHistory = [], onViewHistory, onViewGallery, holisticProfile = null, userName = null }) {
   const [hoveredMode, setHoveredMode] = useState(null);
+
+  // Determine if this is a returning user
+  const isReturningUser = userHistory.length > 0;
+
+  // Calculate test counts per mode from history
+  const modeStats = useMemo(() => {
+    const stats = {
+      hackathon: { count: 0, stability: null },
+      overall: { count: 0, stability: null },
+      deep_dive: { count: 0, interests: new Set() }
+    };
+
+    userHistory.forEach(assessment => {
+      const mode = assessment.mode;
+      if (stats[mode]) {
+        stats[mode].count++;
+        if (mode === 'deep_dive' && assessment.modeSpecific?.interest) {
+          stats[mode].interests.add(assessment.modeSpecific.interest);
+        }
+      }
+    });
+
+    // Override with holistic profile data if available
+    if (holisticProfile?.mode_profiles) {
+      Object.entries(holisticProfile.mode_profiles).forEach(([mode, data]) => {
+        if (stats[mode]) {
+          stats[mode].count = data.tests_included || stats[mode].count;
+          stats[mode].stability = data.stability;
+        }
+      });
+    }
+
+    if (holisticProfile?.deep_dive_profiles) {
+      stats.deep_dive.interests = new Set(Object.keys(holisticProfile.deep_dive_profiles));
+    }
+
+    return stats;
+  }, [userHistory, holisticProfile]);
 
   // Track screen view on mount
   useEffect(() => {
@@ -187,12 +285,12 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
       </div>
 
       <div className="relative z-10 max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-12 min-h-screen flex flex-col">
-        {/* Header - compact on mobile */}
+        {/* Header - compact on mobile, different for returning users */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
-          className="text-center mb-4 md:mb-16"
+          className={`text-center ${isReturningUser ? 'mb-4 md:mb-8' : 'mb-4 md:mb-16'}`}
         >
           {/* Logo - smaller on mobile */}
           <motion.div
@@ -207,202 +305,238 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
             </svg>
           </motion.div>
 
-          <h1 className="text-2xl md:text-4xl lg:text-6xl font-bold mb-2 md:mb-4 tracking-tight">
-            <span className="text-neutral-100">Who are you when</span>
-            <br />
-            <span className="bg-gradient-to-r from-orange-300 via-pink-300 to-violet-300 bg-clip-text text-transparent">
-              no one's watching?
-            </span>
-          </h1>
-          <p className="text-neutral-400 text-sm md:text-lg max-w-xl mx-auto">
-            Not a survey. Not a quiz. A mirror.
-          </p>
+          {isReturningUser ? (
+            <>
+              <h1 className="text-2xl md:text-4xl font-bold mb-2 tracking-tight">
+                <span className="text-neutral-100">Welcome back</span>
+                {userName && (
+                  <span className="bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent">
+                    , {userName.split(' ')[0]}
+                  </span>
+                )}
+              </h1>
+              <p className="text-neutral-400 text-sm md:text-base max-w-xl mx-auto">
+                Continue building your profile or explore new areas
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl md:text-4xl lg:text-6xl font-bold mb-2 md:mb-4 tracking-tight">
+                <span className="text-neutral-100">Who are you when</span>
+                <br />
+                <span className="bg-gradient-to-r from-orange-300 via-pink-300 to-violet-300 bg-clip-text text-transparent">
+                  no one's watching?
+                </span>
+              </h1>
+              <p className="text-neutral-400 text-sm md:text-lg max-w-xl mx-auto">
+                Not a survey. Not a quiz. A mirror.
+              </p>
+            </>
+          )}
         </motion.div>
 
-        {/* Mode Cards */}
-        <div className="flex-1 flex items-start md:items-center justify-center">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-6 w-full max-w-5xl">
-            {modes.map((mode, index) => (
-              <motion.button
-                key={mode.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 + index * 0.05, duration: 0.4 }}
-                onHoverStart={() => setHoveredMode(mode.id)}
-                onHoverEnd={() => setHoveredMode(null)}
-                onClick={() => onSelectMode(mode.id)}
-                className="relative text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] rounded-xl md:rounded-3xl"
-                style={{ '--ring-color': mode.colors.primary }}
-              >
-                {/* Recommended badge */}
-                {mode.recommended && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
+        {/* Main content - different layout for returning users */}
+        {isReturningUser ? (
+          // Returning user layout: Archetypes first, then compact mode cards
+          <div className="flex-1 flex flex-col gap-8 max-w-5xl mx-auto w-full">
+            {/* Your Archetypes section */}
+            <YourArchetypes
+              holisticProfile={holisticProfile}
+              userHistory={userHistory}
+              onViewArchetype={onViewHistory}
+              onViewGallery={onViewGallery}
+            />
+
+            {/* Explore More section - compact mode cards */}
+            <div>
+              <h3 className="text-neutral-400 text-xs md:text-sm uppercase tracking-wider mb-4">
+                Explore More
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {modes.map((mode, index) => (
+                  <motion.button
+                    key={mode.id}
+                    initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                    className="absolute -top-2 md:-top-3 left-1/2 -translate-x-1/2 z-10 px-2 md:px-3 py-0.5 md:py-1 rounded-full text-[10px] md:text-xs font-medium text-white"
-                    style={{ background: `linear-gradient(135deg, ${mode.colors.primary}, ${mode.colors.text})` }}
+                    transition={{ delay: 0.3 + index * 0.05, duration: 0.4 }}
+                    onClick={() => onSelectMode(mode.id)}
+                    className="relative text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] rounded-xl"
+                    style={{ '--ring-color': mode.colors.primary }}
                   >
-                    Recommended
-                  </motion.div>
-                )}
-
-                {/* Glow effect - desktop only */}
-                <motion.div
-                  className="hidden md:block absolute inset-0 rounded-3xl blur-xl transition-opacity duration-500"
-                  style={{ background: mode.colors.glow }}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: hoveredMode === mode.id ? 1 : 0 }}
-                />
-
-                {/* Card */}
-                <motion.div
-                  className="relative rounded-xl md:rounded-3xl p-4 md:p-8 h-full overflow-hidden border transition-colors duration-300"
-                  style={{
-                    background: 'rgba(255,255,255,0.03)',
-                    borderColor: hoveredMode === mode.id ? mode.colors.border : 'rgba(255,255,255,0.08)'
-                  }}
-                  whileHover={{ scale: 1.02, y: -8 }}
-                  whileTap={{ scale: 0.98 }}
-                  transition={{ type: "spring", stiffness: 400 }}
-                >
-                  <div className="relative z-10 flex md:block items-center gap-3 md:gap-0">
-                    {/* Icon - inline on mobile */}
                     <motion.div
-                      className="flex-shrink-0 md:mb-6"
-                      animate={hoveredMode === mode.id ? { scale: [1, 1.1, 1] } : {}}
-                      transition={{ duration: 0.4 }}
+                      className="relative rounded-xl p-4 overflow-hidden border transition-colors duration-300"
+                      style={{
+                        background: 'rgba(255,255,255,0.03)',
+                        borderColor: 'rgba(255,255,255,0.08)'
+                      }}
+                      whileHover={{ scale: 1.02, borderColor: mode.colors.border }}
+                      whileTap={{ scale: 0.98 }}
                     >
-                      {IconComponent(mode.id)}
-                    </motion.div>
+                      <div className="flex items-center gap-3">
+                        {/* Icon */}
+                        <div className="flex-shrink-0">
+                          {IconComponent(mode.id)}
+                        </div>
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      {/* Title row - mobile */}
-                      <div className="flex items-center justify-between md:block">
-                        <div>
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
                           <h2
-                            className="text-lg md:text-2xl font-bold"
+                            className="text-base font-semibold"
                             style={{ color: mode.colors.text }}
                           >
                             {mode.title}
                           </h2>
-                          <p className="text-neutral-500 text-xs md:text-sm md:mb-4">{mode.subtitle}</p>
+                          <div className="text-xs mt-1">
+                            <ProgressIndicator
+                              mode={mode.id}
+                              testsCount={modeStats[mode.id]?.count || 0}
+                              stability={modeStats[mode.id]?.stability}
+                              deepDiveInterests={modeStats[mode.id]?.interests?.size || 0}
+                            />
+                          </div>
                         </div>
-                        {/* Meta info - inline on mobile */}
-                        <div className="flex md:hidden items-center gap-2 text-[10px] text-neutral-500">
-                          <span>{mode.duration}</span>
-                          <span>•</span>
-                          <span>{mode.questions}q</span>
-                        </div>
+
+                        {/* Arrow */}
+                        <svg
+                          className="w-4 h-4 flex-shrink-0"
+                          style={{ color: mode.colors.primary }}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
                       </div>
-
-                      {/* Description - hidden on mobile */}
-                      <p className="hidden md:block text-neutral-300 text-sm mb-6 leading-relaxed">
-                        {mode.description}
-                      </p>
-
-                      {/* Tagline - hidden on mobile */}
-                      <p className="hidden md:block text-neutral-400 text-xs italic mb-6">"{mode.tagline}"</p>
-
-                      {/* Meta info - desktop */}
-                      <div className="hidden md:flex items-center gap-4 text-xs text-neutral-500">
-                        <span className="flex items-center gap-1.5">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {mode.duration}
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {mode.questions} questions
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Arrow - always visible on mobile, hover on desktop */}
-                    <motion.div
-                      className="flex-shrink-0 md:absolute md:bottom-8 md:right-8"
-                      style={{ color: mode.colors.primary }}
-                      initial={{ opacity: 1 }}
-                      animate={{
-                        opacity: 1,
-                        x: 0
-                      }}
-                    >
-                      <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
                     </motion.div>
-                  </div>
-                </motion.div>
-              </motion.button>
-            ))}
-          </div>
-        </div>
-
-        {/* User History Section */}
-        {userHistory.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="mt-6 md:mt-8 max-w-5xl mx-auto w-full"
-          >
-            <div className="flex items-center justify-between mb-3 md:mb-4">
-              <h3 className="text-neutral-400 text-xs md:text-sm text-center flex-1">
-                Your Previous Results
-              </h3>
-              {onViewGallery && (
-                <button
-                  onClick={onViewGallery}
-                  className="inline-flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  <span className="hidden md:inline">View All Archetypes</span>
-                  <span className="md:hidden">Archetypes</span>
-                </button>
-              )}
+                  </motion.button>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-3">
-              {userHistory.slice(0, 3).map((assessment) => (
+          </div>
+        ) : (
+          // New user layout: Full mode cards
+          <div className="flex-1 flex items-start md:items-center justify-center">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-6 w-full max-w-5xl">
+              {modes.map((mode, index) => (
                 <motion.button
-                  key={assessment.id}
-                  onClick={() => onViewHistory(assessment)}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-3 md:p-4 text-left hover:border-violet-400/50 transition-colors"
+                  key={mode.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 + index * 0.05, duration: 0.4 }}
+                  onHoverStart={() => setHoveredMode(mode.id)}
+                  onHoverEnd={() => setHoveredMode(null)}
+                  onClick={() => onSelectMode(mode.id)}
+                  className="relative text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] rounded-xl md:rounded-3xl"
+                  style={{ '--ring-color': mode.colors.primary }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center text-lg md:text-xl"
-                      style={{ backgroundColor: `${assessment.archetype?.color || '#a78bfa'}20` }}
+                  {/* Recommended badge */}
+                  {mode.recommended && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                      className="absolute -top-2 md:-top-3 left-1/2 -translate-x-1/2 z-10 px-2 md:px-3 py-0.5 md:py-1 rounded-full text-[10px] md:text-xs font-medium text-white"
+                      style={{ background: `linear-gradient(135deg, ${mode.colors.primary}, ${mode.colors.text})` }}
                     >
-                      {assessment.archetype?.emoji || '🎭'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div
-                        className="text-sm md:text-base font-semibold truncate"
-                        style={{ color: assessment.archetype?.color || '#a78bfa' }}
+                      Recommended
+                    </motion.div>
+                  )}
+
+                  {/* Glow effect - desktop only */}
+                  <motion.div
+                    className="hidden md:block absolute inset-0 rounded-3xl blur-xl transition-opacity duration-500"
+                    style={{ background: mode.colors.glow }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: hoveredMode === mode.id ? 1 : 0 }}
+                  />
+
+                  {/* Card */}
+                  <motion.div
+                    className="relative rounded-xl md:rounded-3xl p-4 md:p-8 h-full overflow-hidden border transition-colors duration-300"
+                    style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      borderColor: hoveredMode === mode.id ? mode.colors.border : 'rgba(255,255,255,0.08)'
+                    }}
+                    whileHover={{ scale: 1.02, y: -8 }}
+                    whileTap={{ scale: 0.98 }}
+                    transition={{ type: "spring", stiffness: 400 }}
+                  >
+                    <div className="relative z-10 flex md:block items-center gap-3 md:gap-0">
+                      {/* Icon - inline on mobile */}
+                      <motion.div
+                        className="flex-shrink-0 md:mb-6"
+                        animate={hoveredMode === mode.id ? { scale: [1, 1.1, 1] } : {}}
+                        transition={{ duration: 0.4 }}
                       >
-                        {assessment.archetype?.name || 'Unknown'}
+                        {IconComponent(mode.id)}
+                      </motion.div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        {/* Title row - mobile */}
+                        <div className="flex items-center justify-between md:block">
+                          <div>
+                            <h2
+                              className="text-lg md:text-2xl font-bold"
+                              style={{ color: mode.colors.text }}
+                            >
+                              {mode.title}
+                            </h2>
+                            <p className="text-neutral-500 text-xs md:text-sm md:mb-4">{mode.subtitle}</p>
+                          </div>
+                          {/* Meta info - inline on mobile */}
+                          <div className="flex md:hidden items-center gap-2 text-[10px] text-neutral-500">
+                            <span>{mode.duration}</span>
+                            <span>•</span>
+                            <span>{mode.questions}q</span>
+                          </div>
+                        </div>
+
+                        {/* Description - hidden on mobile */}
+                        <p className="hidden md:block text-neutral-300 text-sm mb-6 leading-relaxed">
+                          {mode.description}
+                        </p>
+
+                        {/* Tagline - hidden on mobile */}
+                        <p className="hidden md:block text-neutral-400 text-xs italic mb-6">"{mode.tagline}"</p>
+
+                        {/* Meta info - desktop */}
+                        <div className="hidden md:flex items-center gap-4 text-xs text-neutral-500">
+                          <span className="flex items-center gap-1.5">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {mode.duration}
+                          </span>
+                          <span className="flex items-center gap-1.5">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            {mode.questions} questions
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-neutral-500 text-[10px] md:text-xs">
-                        {assessment.mode} • {assessment.completedAt?.toLocaleDateString()}
-                      </p>
+
+                      {/* Arrow - always visible on mobile, hover on desktop */}
+                      <motion.div
+                        className="flex-shrink-0 md:absolute md:bottom-8 md:right-8"
+                        style={{ color: mode.colors.primary }}
+                        initial={{ opacity: 1 }}
+                        animate={{
+                          opacity: 1,
+                          x: 0
+                        }}
+                      >
+                        <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </motion.div>
                     </div>
-                    <svg className="w-4 h-4 text-neutral-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
+                  </motion.div>
                 </motion.button>
               ))}
             </div>
-          </motion.div>
+          </div>
         )}
 
         {/* Footer - hidden on mobile */}
