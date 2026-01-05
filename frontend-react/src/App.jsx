@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ModeSelection from './components/ModeSelection';
 import InterestSelection from './components/InterestSelection';
+import InterestInput from './components/InterestInput';
 import Assessment from './components/Assessment';
 import Results from './components/Results';
 import GoogleSignInButton from './components/GoogleSignInButton';
@@ -13,8 +14,10 @@ import * as api from './api';
 
 const STEPS = {
   MODE: 'mode',
+  INTEREST_INPUT: 'interest_input',  // Single interest input for deep_dive
   INTERESTS: 'interests',
   ASSESSMENT: 'assessment',
+  EXTENSION_OFFER: 'extension_offer',
   RESULTS: 'results'
 };
 
@@ -39,6 +42,13 @@ function App() {
 
   // Gallery state
   const [showGallery, setShowGallery] = useState(false);
+
+  // Extension offer state
+  const [extensionOffer, setExtensionOffer] = useState(null);
+  const [pendingResults, setPendingResults] = useState(null);
+
+  // Deep dive interest state
+  const [deepDiveInterest, setDeepDiveInterest] = useState(null);
 
   // Timing refs for analytics
   const testStartTimeRef = useRef(null);
@@ -129,6 +139,14 @@ function App() {
   };
 
   const handleModeSelect = async (selectedMode) => {
+    // Deep dive mode shows interest input first (before starting test)
+    if (selectedMode === 'deep_dive') {
+      setMode(selectedMode);
+      setStep(STEPS.INTEREST_INPUT);
+      testStartTimeRef.current = Date.now();
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     testStartTimeRef.current = Date.now();
@@ -162,7 +180,7 @@ function App() {
           questionNumber: 1
         });
       } else if (uiFlow.show_interest_selection) {
-        // Show life context selection (overall or deep_dive mode)
+        // Show life context selection (overall mode)
         setStep(STEPS.INTERESTS);
 
         saveSession({
@@ -176,6 +194,44 @@ function App() {
       } else {
         // Fallback - go to interests
         setStep(STEPS.INTERESTS);
+      }
+    } catch (err) {
+      setError('Failed to start test. Please try again.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handler for single interest input (deep_dive mode)
+  const handleInterestInputSubmit = async (interest) => {
+    setIsLoading(true);
+    setError(null);
+    setDeepDiveInterest(interest);
+
+    // Track interest selection
+    Analytics.interestsSelected([interest], 1);
+
+    try {
+      // Start test with the interest parameter
+      const response = await api.startTest('deep_dive', interest);
+      setSessionId(response.session_id);
+      setModeConfig(response.mode_config);
+
+      if (response.next_question) {
+        setCurrentQuestion(response.next_question);
+        setQuestionNumber(1);
+        setStep(STEPS.ASSESSMENT);
+        questionStartTimeRef.current = Date.now();
+
+        saveSession({
+          sessionId: response.session_id,
+          mode: 'deep_dive',
+          modeConfig: response.mode_config,
+          interestConfig: null,
+          step: STEPS.ASSESSMENT,
+          questionNumber: 1
+        });
       }
     } catch (err) {
       setError('Failed to start test. Please try again.');
@@ -253,7 +309,23 @@ function App() {
       );
 
       if (response.test_complete) {
-        // Test is complete, show results
+        // Check if extension is available before showing results
+        try {
+          const extensionCheck = await api.checkExtension(sessionId);
+          if (extensionCheck.offer_extension) {
+            // Store results for later and show extension offer
+            setIsAnalyzing(false);
+            setPendingResults(response);
+            setExtensionOffer(extensionCheck);
+            setStep(STEPS.EXTENSION_OFFER);
+            return;
+          }
+        } catch (err) {
+          console.error('Failed to check extension:', err);
+          // Continue to show results even if extension check fails
+        }
+
+        // No extension offered, show results
         setIsAnalyzing(false);
         setResults(response);
         setStep(STEPS.RESULTS);
@@ -314,6 +386,62 @@ function App() {
     }
   };
 
+  // Handle accepting the extension offer
+  const handleAcceptExtension = async () => {
+    setIsLoading(true);
+    try {
+      const response = await api.acceptExtension(sessionId);
+      if (response.next_question) {
+        // Update question count and continue assessment
+        setModeConfig(prev => ({
+          ...prev,
+          question_count: response.new_question_count
+        }));
+        setCurrentQuestion(response.next_question);
+        setQuestionNumber(prev => prev + 1);
+        questionStartTimeRef.current = Date.now();
+        setExtensionOffer(null);
+        setPendingResults(null);
+        setStep(STEPS.ASSESSMENT);
+
+        // Track extension accepted
+        Analytics.trackEvent?.('extension_accepted', {
+          focus_traits: response.focus_traits?.join(',')
+        });
+      }
+    } catch (err) {
+      console.error('Failed to accept extension:', err);
+      // Fall back to showing pending results
+      handleDeclineExtension();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle declining the extension offer
+  const handleDeclineExtension = () => {
+    if (pendingResults) {
+      setResults(pendingResults);
+      setStep(STEPS.RESULTS);
+      localStorage.removeItem('ception_session');
+
+      // Track test completion
+      const testDuration = testStartTimeRef.current
+        ? Date.now() - testStartTimeRef.current
+        : 0;
+      Analytics.testCompleted(
+        mode,
+        pendingResults.archetype?.name || pendingResults.suggested_archetype || 'unknown',
+        pendingResults.archetype?.confidence || pendingResults.archetype_confidence || 0,
+        pendingResults.scores || {},
+        testDuration
+      );
+      Analytics.setUserArchetype(pendingResults.archetype?.name || pendingResults.suggested_archetype);
+    }
+    setExtensionOffer(null);
+    setPendingResults(null);
+  };
+
   const resetTest = () => {
     localStorage.removeItem('ception_session');
     setStep(STEPS.MODE);
@@ -326,6 +454,9 @@ function App() {
     setResults(null);
     setError(null);
     setIsAnalyzing(false);
+    setExtensionOffer(null);
+    setPendingResults(null);
+    setDeepDiveInterest(null);
   };
 
   return (
@@ -402,6 +533,20 @@ function App() {
           </motion.div>
         )}
 
+        {step === STEPS.INTEREST_INPUT && (
+          <motion.div
+            key="interest-input"
+            initial={{ opacity: 0, x: 100 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -100 }}
+          >
+            <InterestInput
+              onSubmit={handleInterestInputSubmit}
+              isLoading={isLoading}
+            />
+          </motion.div>
+        )}
+
         {step === STEPS.INTERESTS && (
           <motion.div
             key="interests"
@@ -437,6 +582,71 @@ function App() {
           </motion.div>
         )}
 
+        {step === STEPS.EXTENSION_OFFER && extensionOffer && (
+          <motion.div
+            key="extension"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="min-h-screen bg-[#09090b] flex items-center justify-center px-6"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className="max-w-md w-full text-center"
+            >
+              {/* Fuzzy icon */}
+              <motion.div
+                className="w-24 h-24 mx-auto mb-6 rounded-full bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex items-center justify-center"
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                <span className="text-4xl">🔍</span>
+              </motion.div>
+
+              <h2 className="text-2xl font-bold text-white mb-3">
+                We're getting a picture, but it's a bit fuzzy
+              </h2>
+
+              <p className="text-neutral-400 mb-8">
+                {extensionOffer.message || "Want sharper results? Just 2 more questions."}
+              </p>
+
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleAcceptExtension}
+                  disabled={isLoading}
+                  className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white font-medium hover:from-violet-500 hover:to-purple-500 transition-all disabled:opacity-50"
+                >
+                  {isLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Loading...
+                    </span>
+                  ) : (
+                    "Yes, let's go"
+                  )}
+                </button>
+
+                <button
+                  onClick={handleDeclineExtension}
+                  disabled={isLoading}
+                  className="w-full py-4 px-6 rounded-xl border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                >
+                  Show me what you have
+                </button>
+              </div>
+
+              {extensionOffer.focus_traits && (
+                <p className="text-xs text-neutral-600 mt-6">
+                  Focus areas: {extensionOffer.focus_traits.map(t => t.replace('_', ' ')).join(', ')}
+                </p>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+
         {step === STEPS.RESULTS && (
           <motion.div
             key="results"
@@ -447,6 +657,7 @@ function App() {
             <Results
               results={results}
               mode={mode}
+              interest={deepDiveInterest}
               onFeedback={handleFeedback}
               showSavePrompt={!isAuthenticated && !isViewingHistory}
               onViewGallery={handleViewGallery}
