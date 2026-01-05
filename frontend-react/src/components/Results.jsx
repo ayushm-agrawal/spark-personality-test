@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GoogleSignInButton from './GoogleSignInButton';
 import { Analytics } from '../services/analytics';
+import StabilityBadge from './shared/StabilityBadge';
 
 // Trait configuration
 const traitConfig = [
@@ -866,29 +867,6 @@ function ConfidenceInfo({ confidence, archetypeColor }) {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-// Stability badge component
-function StabilityBadge({ stability }) {
-  const config = {
-    stable: { label: 'Stable', color: '#22c55e', icon: '✓', description: 'Your results are consistent' },
-    converging: { label: 'Converging', color: '#eab308', icon: '→', description: 'Your profile is becoming clearer' },
-    inconsistent: { label: 'Variable', color: '#f97316', icon: '~', description: 'Results vary between tests' },
-    new: { label: 'New', color: '#a78bfa', icon: '★', description: 'Take more tests for better accuracy' },
-  };
-
-  const { label, color, icon, description } = config[stability] || config.new;
-
-  return (
-    <div
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
-      style={{ backgroundColor: `${color}20`, color }}
-      title={description}
-    >
-      <span>{icon}</span>
-      <span>{label}</span>
     </div>
   );
 }

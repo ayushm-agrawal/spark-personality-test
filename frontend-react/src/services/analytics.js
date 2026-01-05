@@ -87,10 +87,45 @@ export const Analytics = {
     skip_slide: slideIndex
   }),
 
+  // Profile events
+  profileViewed: () => trackEvent('profile_viewed'),
+  profileShared: (username) => trackEvent('profile_shared', { username }),
+  publicProfileViewed: (username) => trackEvent('public_profile_viewed', { username }),
+
+  // Insight events
+  insightPageViewed: (archetypeId, mode) => trackEvent('insight_page_viewed', {
+    archetype_id: archetypeId,
+    mode
+  }),
+  insightSectionExpanded: (archetypeId, section) => trackEvent('insight_section_expanded', {
+    archetype_id: archetypeId,
+    section
+  }),
+
+  // Badge events
+  badgeEarned: (badgeId, badgeName) => trackEvent('badge_earned', {
+    badge_id: badgeId,
+    badge_name: badgeName
+  }),
+  badgeViewed: (badgeId) => trackEvent('badge_viewed', { badge_id: badgeId }),
+
+  // Error tracking
+  errorOccurred: (errorType, errorMessage, component) => trackEvent('error_occurred', {
+    error_type: errorType,
+    error_message: errorMessage?.substring(0, 100), // Limit message length
+    component
+  }),
+
   // Set user properties (for segmentation in Firebase)
   setUserArchetype: (archetype) => {
     if (analytics) {
       setUserProperties(analytics, { last_archetype: archetype });
+    }
+  },
+
+  setUserTestCount: (count) => {
+    if (analytics) {
+      setUserProperties(analytics, { test_count: count });
     }
   }
 };

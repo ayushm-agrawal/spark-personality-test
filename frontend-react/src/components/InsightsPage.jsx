@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import * as api from '../api';
+import StabilityBadge from './shared/StabilityBadge';
 
 // Badge icons mapping
 const badgeIcons = {
@@ -182,74 +183,6 @@ function QuickInsightsCards({ quickInsights, color }) {
           <p className="text-sm text-neutral-200 leading-relaxed">{card.value}</p>
         </motion.div>
       ))}
-    </div>
-  );
-}
-
-// Stability Badge with tooltip
-function StabilityBadge({ stability, showTooltip = false }) {
-  const [tooltipVisible, setTooltipVisible] = useState(false);
-
-  const config = {
-    stable: {
-      label: 'Stable',
-      color: '#22c55e',
-      icon: '✓',
-      tooltip: 'Your results are consistent across multiple assessments. This is reliably you.'
-    },
-    converging: {
-      label: 'Emerging',
-      color: '#eab308',
-      icon: '→',
-      tooltip: "We're seeing a pattern form. One more test will give you a stable profile."
-    },
-    inconsistent: {
-      label: 'Variable',
-      color: '#f97316',
-      icon: '~',
-      tooltip: 'Your results vary between assessments. This could mean you\'re adaptable, or try answering more carefully.'
-    },
-    new: {
-      label: 'New',
-      color: '#a78bfa',
-      icon: '★',
-      tooltip: 'Take more tests to confirm your archetype and build a stable profile.'
-    },
-  };
-
-  const { label, color, icon, tooltip } = config[stability] || config.new;
-
-  return (
-    <div className="relative inline-block">
-      <div
-        className="inline-flex items-center gap-1.5 rounded-full font-medium cursor-help text-sm px-3 py-1"
-        style={{ backgroundColor: `${color}20`, color }}
-        onMouseEnter={() => showTooltip && setTooltipVisible(true)}
-        onMouseLeave={() => showTooltip && setTooltipVisible(false)}
-        onClick={() => showTooltip && setTooltipVisible(!tooltipVisible)}
-      >
-        <span>{icon}</span>
-        <span>{label}</span>
-        {showTooltip && (
-          <svg className="w-3.5 h-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        )}
-      </div>
-
-      <AnimatePresence>
-        {showTooltip && tooltipVisible && (
-          <motion.div
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 5 }}
-            className="absolute z-50 top-full mt-2 left-1/2 -translate-x-1/2 w-64 p-3 bg-neutral-800 border border-neutral-700 rounded-xl shadow-lg text-sm text-neutral-300"
-          >
-            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-neutral-800 border-l border-t border-neutral-700" />
-            {tooltip}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

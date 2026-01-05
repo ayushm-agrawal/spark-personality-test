@@ -153,7 +153,7 @@ export default function TutorialModal({ onComplete, onSlideView }) {
         <button
           ref={firstFocusableRef}
           onClick={handleSkip}
-          className="absolute top-4 right-4 text-neutral-500 hover:text-white text-sm transition-colors z-10"
+          className="absolute top-4 right-4 text-neutral-400 hover:text-white text-sm transition-colors z-10"
         >
           Skip
         </button>
@@ -194,22 +194,26 @@ export default function TutorialModal({ onComplete, onSlideView }) {
         {/* Progress dots and button */}
         <div className="px-8 pb-8">
           {/* Progress dots */}
-          <div className="flex justify-center gap-2 mb-6" role="tablist" aria-label="Tutorial progress">
+          <div className="flex justify-center gap-1 mb-6" role="tablist" aria-label="Tutorial progress">
             {SLIDES.map((_, index) => (
               <button
                 key={index}
                 onClick={() => setCurrentSlide(index)}
-                className={`w-2 h-2 rounded-full transition-all ${
-                  index === currentSlide
-                    ? 'bg-violet-500 w-6'
-                    : index < currentSlide
-                    ? 'bg-violet-500/50'
-                    : 'bg-neutral-700'
-                }`}
+                className="p-2 -m-1"
                 role="tab"
                 aria-selected={index === currentSlide}
                 aria-label={`Step ${index + 1} of ${SLIDES.length}`}
-              />
+              >
+                <div
+                  className={`h-2 rounded-full transition-all ${
+                    index === currentSlide
+                      ? 'bg-violet-500 w-6'
+                      : index < currentSlide
+                      ? 'bg-violet-500/50 w-2'
+                      : 'bg-neutral-700 w-2'
+                  }`}
+                />
+              </button>
             ))}
           </div>
 
