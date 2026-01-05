@@ -36,6 +36,39 @@ from prompts import get_all_life_contexts, LIFE_CONTEXT_CATEGORIES
 
 router = APIRouter()
 
+# ============================================================================
+# ARCHETYPE INSIGHTS CACHE
+# ============================================================================
+
+# In-memory cache for archetype insights (static content)
+_insights_cache = {}
+_insights_cache_loaded = False
+
+
+def _load_insights_cache():
+    """Load all archetype insights into memory cache."""
+    global _insights_cache, _insights_cache_loaded
+    from firebase import db
+
+    try:
+        insights_ref = db.collection("archetype_insights")
+        for doc in insights_ref.stream():
+            _insights_cache[doc.id] = doc.to_dict()
+        _insights_cache_loaded = True
+        api_logger.info(f"[API] Loaded {len(_insights_cache)} archetype insights into cache")
+    except Exception as e:
+        api_logger.error(f"[API] Error loading insights cache: {e}")
+
+
+def get_cached_insight(archetype_id: str) -> dict:
+    """Get archetype insight from cache, loading if needed."""
+    global _insights_cache_loaded
+
+    if not _insights_cache_loaded:
+        _load_insights_cache()
+
+    return _insights_cache.get(archetype_id.lower())
+
 
 async def trigger_prefetch(session_id: str, question_id: str, predictions: dict):
     """
@@ -161,6 +194,84 @@ async def get_archetype_compatibility():
         dict: A dictionary containing compatibility information for all archetypes.
     """
     return {"compatibility": ARCHETYPE_COMPATIBILITY}
+
+
+@router.get("/archetype-insights/{archetype_id}")
+async def get_archetype_insights(archetype_id: str, mode: str = "concise"):
+    """
+    Get deep insights for a specific archetype.
+
+    Args:
+        archetype_id: The archetype ID (e.g., "architect", "catalyst")
+        mode: "concise" or "deep" - controls how much content is returned
+
+    Returns:
+        dict: Archetype insights tailored to the requested mode
+    """
+    insight = get_cached_insight(archetype_id)
+
+    if not insight:
+        return {"error": f"Archetype '{archetype_id}' not found"}
+
+    # Base response for both modes
+    response = {
+        "archetype_id": insight.get("archetype_id", archetype_id),
+        "display_name": insight.get("display_name"),
+        "tagline": insight.get("tagline"),
+        "icon": insight.get("icon"),
+        "color": insight.get("color"),
+        "summary": insight.get("summary_concise"),
+        "collaboration_strengths": insight.get("collaboration_strengths", {}).get("concise", []),
+        "potential_blind_spots": insight.get("potential_blind_spots", {}).get("concise", []),
+        "actionable_tips": insight.get("actionable_tips", [])[:2],  # First 2 tips for concise
+        "complementary_archetypes": insight.get("complementary_archetypes", []),
+        "trait_profile": insight.get("trait_profile", {}),
+        "mode": "concise"
+    }
+
+    # Add deep content if requested
+    if mode == "deep":
+        response.update({
+            "summary": insight.get("summary_deep", insight.get("summary_concise")),
+            "collaboration_strengths": insight.get("collaboration_strengths", {}).get("deep", []),
+            "potential_blind_spots": insight.get("potential_blind_spots", {}).get("deep", []),
+            "team_phases": insight.get("team_phases", {}),
+            "energy_dynamics": insight.get("energy_dynamics", {}),
+            "actionable_tips": insight.get("actionable_tips", []),  # All tips
+            "ideal_team_role": insight.get("ideal_team_role"),
+            "challenging_pairings": insight.get("challenging_pairings", []),
+            "mode": "deep"
+        })
+
+    return response
+
+
+@router.get("/archetype-insights/")
+async def get_all_archetype_insights():
+    """
+    Get all archetype insights (concise summaries).
+
+    Returns:
+        dict: All archetypes with their concise insights
+    """
+    global _insights_cache_loaded
+
+    if not _insights_cache_loaded:
+        _load_insights_cache()
+
+    result = {}
+    for archetype_id, insight in _insights_cache.items():
+        result[archetype_id] = {
+            "archetype_id": archetype_id,
+            "display_name": insight.get("display_name"),
+            "tagline": insight.get("tagline"),
+            "icon": insight.get("icon"),
+            "color": insight.get("color"),
+            "summary": insight.get("summary_concise"),
+            "complementary_archetypes": insight.get("complementary_archetypes", [])
+        }
+
+    return {"insights": result}
 
 
 @router.post("/start-test/")
@@ -857,4 +968,67 @@ async def get_badges_endpoint(profile_id: str):
         "incomplete": incomplete_badges,
         "total_points": total_points,
         "badges_count": len(earned_badges)
+    }
+
+
+# ============================================================================
+# USER PREFERENCES ENDPOINTS
+# ============================================================================
+
+class SetInsightModeRequest(BaseModel):
+    """Request model for setting insight mode preference."""
+    profile_id: str
+    mode: str  # "concise" or "deep"
+
+
+@router.post("/set-insight-mode/")
+async def set_insight_mode(request: SetInsightModeRequest):
+    """
+    Set user's preferred insight display mode.
+
+    Args:
+        request: SetInsightModeRequest with profile_id and mode ("concise" or "deep")
+
+    Returns:
+        dict: {"success": bool, "mode": str}
+    """
+    from firebase import db
+    import time
+
+    if request.mode not in ["concise", "deep"]:
+        return {"success": False, "error": "Mode must be 'concise' or 'deep'"}
+
+    try:
+        profile_doc = db.collection("user_profiles").document(request.profile_id)
+        profile_doc.update({
+            "insight_mode": request.mode,
+            "updated_at": time.time()
+        })
+
+        return {"success": True, "mode": request.mode}
+
+    except Exception as e:
+        api_logger.error(f"[API] Error setting insight mode: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/user-preferences/{profile_id}")
+async def get_user_preferences(profile_id: str):
+    """
+    Get user preferences for display settings.
+
+    Returns:
+        dict: User preferences including insight_mode, badges_visibility
+    """
+    from firebase import db
+
+    profile_doc = db.collection("user_profiles").document(profile_id)
+    profile = profile_doc.get().to_dict()
+
+    if not profile:
+        return {"error": "Profile not found"}
+
+    return {
+        "insight_mode": profile.get("insight_mode", "concise"),
+        "badges_visibility": profile.get("badges_visibility", "public")
     }
