@@ -38,7 +38,7 @@ const ModeIcon = ({ mode }) => {
 };
 
 const modeLabels = {
-  hackathon: 'Hackathon Mode',
+  hackathon: 'Team Crunch',
   overall: 'Full Profile',
   deep_dive: 'Deep Dive',
   interest: 'Deep Dive'  // Legacy support

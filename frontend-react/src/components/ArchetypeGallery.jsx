@@ -287,17 +287,17 @@ function ArchetypeCard({ archetype, isExpanded, onToggle }) {
                 ))}
               </div>
 
-              {/* Hackathon Mode */}
+              {/* Under Pressure / Team Crunch */}
               {archetype.hackathon_superpower && (
                 <div className="bg-orange-500/10 rounded-xl p-4 border border-orange-500/20">
-                  <h4 className="text-xs text-orange-400 uppercase tracking-wider mb-2">⚡ In a Hackathon</h4>
+                  <h4 className="text-xs text-orange-400 uppercase tracking-wider mb-2">⚡ Under Pressure</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-neutral-500">Superpower: </span>
                       <span className="text-neutral-300">{archetype.hackathon_superpower}</span>
                     </div>
                     <div>
-                      <span className="text-neutral-500">Watch out for: </span>
+                      <span className="text-neutral-500">Pressure Point: </span>
                       <span className="text-neutral-300">{archetype.hackathon_pitfall}</span>
                     </div>
                   </div>

@@ -82,11 +82,18 @@ function App() {
         })
         .catch(console.error);
 
-      // Get or create holistic profile
+      // Get or create holistic profile and load full profile view
       api.getOrCreateProfile(user.uid, null)
-        .then(profile => {
+        .then(async (profile) => {
           if (profile && profile.profile_id) {
             setProfileId(profile.profile_id);
+            // Load full profile view for ModeSelection
+            try {
+              const fullProfile = await api.getProfileView(profile.profile_id);
+              setHolisticProfile(fullProfile);
+            } catch (err) {
+              console.error('Failed to load profile view:', err);
+            }
           }
         })
         .catch(console.error);
@@ -588,6 +595,8 @@ function App() {
               userHistory={userHistory}
               onViewHistory={handleViewHistory}
               onViewGallery={handleViewGallery}
+              holisticProfile={holisticProfile}
+              userName={user?.displayName}
             />
           </motion.div>
         )}
