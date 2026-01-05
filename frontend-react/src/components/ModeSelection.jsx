@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Analytics } from '../services/analytics';
 import YourArchetypes from './YourArchetypes';
+import { useTheme } from '../contexts/ThemeContext';
 
 // Custom Mode Icons (SVG) - replaces emojis for better accessibility
 const ModeIcons = {
@@ -200,6 +201,7 @@ function ProgressIndicator({ mode, testsCount, stability, deepDiveInterests = 0 
 
 export default function ModeSelection({ onSelectMode, userHistory = [], onViewHistory, onViewGallery, holisticProfile = null, userName = null }) {
   const [hoveredMode, setHoveredMode] = useState(null);
+  const { isDark } = useTheme();
 
   // Determine if this is a returning user
   const isReturningUser = userHistory.length > 0;
@@ -267,18 +269,28 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
   };
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white overflow-hidden relative">
-      {/* Animated background */}
+    <div className={`min-h-screen overflow-hidden relative ${isDark ? 'bg-[#09090b] text-white' : 'bg-neutral-50 text-gray-900'}`}>
+      {/* Animated background gradients - theme-aware */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div
-          className="absolute top-1/4 -left-1/4 w-[500px] h-[500px] rounded-full opacity-30"
-          style={{ background: 'radial-gradient(circle, rgba(167,139,250,0.2) 0%, transparent 70%)' }}
+          className="absolute top-1/4 -left-1/4 w-[500px] h-[500px] rounded-full"
+          style={{
+            background: isDark
+              ? 'radial-gradient(circle, rgba(167,139,250,0.2) 0%, transparent 70%)'
+              : 'radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)',
+            opacity: isDark ? 0.3 : 0.5
+          }}
           animate={{ x: [0, 50, 0], y: [0, 30, 0] }}
           transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
         />
         <motion.div
-          className="absolute bottom-1/4 -right-1/4 w-[400px] h-[400px] rounded-full opacity-30"
-          style={{ background: 'radial-gradient(circle, rgba(251,146,60,0.15) 0%, transparent 70%)' }}
+          className="absolute bottom-1/4 -right-1/4 w-[400px] h-[400px] rounded-full"
+          style={{
+            background: isDark
+              ? 'radial-gradient(circle, rgba(251,146,60,0.15) 0%, transparent 70%)'
+              : 'radial-gradient(circle, rgba(234,88,12,0.1) 0%, transparent 70%)',
+            opacity: isDark ? 0.3 : 0.5
+          }}
           animate={{ x: [0, -40, 0], y: [0, -40, 0] }}
           transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
         />
@@ -308,27 +320,33 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
           {isReturningUser ? (
             <>
               <h1 className="text-2xl md:text-4xl font-bold mb-2 tracking-tight">
-                <span className="text-neutral-100">Welcome back</span>
+                <span className={isDark ? 'text-neutral-100' : 'text-gray-900'}>Welcome back</span>
                 {userName && (
-                  <span className="bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent">
+                  <span className={isDark
+                    ? 'bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent'
+                    : 'bg-gradient-to-r from-violet-600 to-purple-600 bg-clip-text text-transparent'
+                  }>
                     , {userName.split(' ')[0]}
                   </span>
                 )}
               </h1>
-              <p className="text-neutral-400 text-sm md:text-base max-w-xl mx-auto">
+              <p className={`text-sm md:text-base max-w-xl mx-auto ${isDark ? 'text-neutral-400' : 'text-gray-600'}`}>
                 Continue building your profile or explore new areas
               </p>
             </>
           ) : (
             <>
               <h1 className="text-2xl md:text-4xl lg:text-6xl font-bold mb-2 md:mb-4 tracking-tight">
-                <span className="text-neutral-100">Who are you when</span>
+                <span className={isDark ? 'text-neutral-100' : 'text-gray-900'}>Who are you when</span>
                 <br />
-                <span className="bg-gradient-to-r from-orange-300 via-pink-300 to-violet-300 bg-clip-text text-transparent">
+                <span className={isDark
+                  ? 'bg-gradient-to-r from-orange-300 via-pink-300 to-violet-300 bg-clip-text text-transparent'
+                  : 'bg-gradient-to-r from-orange-500 via-pink-500 to-violet-600 bg-clip-text text-transparent'
+                }>
                   no one's watching?
                 </span>
               </h1>
-              <p className="text-neutral-400 text-sm md:text-lg max-w-xl mx-auto">
+              <p className={`text-sm md:text-lg max-w-xl mx-auto ${isDark ? 'text-neutral-400' : 'text-gray-600'}`}>
                 Not a survey. Not a quiz. A mirror.
               </p>
             </>
@@ -349,7 +367,7 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
 
             {/* Explore More section - compact mode cards */}
             <div>
-              <h3 className="text-neutral-400 text-xs md:text-sm uppercase tracking-wider mb-4">
+              <h3 className={`text-xs md:text-sm uppercase tracking-wider mb-4 ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>
                 Explore More
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -360,14 +378,17 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 + index * 0.05, duration: 0.4 }}
                     onClick={() => onSelectMode(mode.id)}
-                    className="relative text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] rounded-xl"
+                    className={`relative text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 rounded-xl ${
+                      isDark ? 'focus-visible:ring-offset-[#09090b]' : 'focus-visible:ring-offset-neutral-50'
+                    }`}
                     style={{ '--ring-color': mode.colors.primary }}
                   >
                     <motion.div
                       className="relative rounded-xl p-4 overflow-hidden border transition-colors duration-300"
                       style={{
-                        background: 'rgba(255,255,255,0.03)',
-                        borderColor: 'rgba(255,255,255,0.08)'
+                        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.8)',
+                        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+                        boxShadow: isDark ? 'none' : '0 1px 3px rgba(0,0,0,0.08)'
                       }}
                       whileHover={{ scale: 1.02, borderColor: mode.colors.border }}
                       whileTap={{ scale: 0.98 }}
@@ -426,7 +447,9 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
                   onHoverStart={() => setHoveredMode(mode.id)}
                   onHoverEnd={() => setHoveredMode(null)}
                   onClick={() => onSelectMode(mode.id)}
-                  className="relative text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b] rounded-xl md:rounded-3xl"
+                  className={`relative text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 rounded-xl md:rounded-3xl ${
+                    isDark ? 'focus-visible:ring-offset-[#09090b]' : 'focus-visible:ring-offset-neutral-50'
+                  }`}
                   style={{ '--ring-color': mode.colors.primary }}
                 >
                   {/* Recommended badge */}
@@ -454,8 +477,9 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
                   <motion.div
                     className="relative rounded-xl md:rounded-3xl p-4 md:p-8 h-full overflow-hidden border transition-colors duration-300"
                     style={{
-                      background: 'rgba(255,255,255,0.03)',
-                      borderColor: hoveredMode === mode.id ? mode.colors.border : 'rgba(255,255,255,0.08)'
+                      background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.9)',
+                      borderColor: hoveredMode === mode.id ? mode.colors.border : (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'),
+                      boxShadow: isDark ? 'none' : '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05)'
                     }}
                     whileHover={{ scale: 1.02, y: -8 }}
                     whileTap={{ scale: 0.98 }}
@@ -482,10 +506,10 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
                             >
                               {mode.title}
                             </h2>
-                            <p className="text-neutral-500 text-xs md:text-sm md:mb-4">{mode.subtitle}</p>
+                            <p className={`text-xs md:text-sm md:mb-4 ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>{mode.subtitle}</p>
                           </div>
                           {/* Meta info - inline on mobile */}
-                          <div className="flex md:hidden items-center gap-2 text-[10px] text-neutral-500">
+                          <div className={`flex md:hidden items-center gap-2 text-[10px] ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
                             <span>{mode.duration}</span>
                             <span>•</span>
                             <span>{mode.questions}q</span>
@@ -493,15 +517,15 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
                         </div>
 
                         {/* Description - hidden on mobile */}
-                        <p className="hidden md:block text-neutral-300 text-sm mb-6 leading-relaxed">
+                        <p className={`hidden md:block text-sm mb-6 leading-relaxed ${isDark ? 'text-neutral-300' : 'text-gray-600'}`}>
                           {mode.description}
                         </p>
 
                         {/* Tagline - hidden on mobile */}
-                        <p className="hidden md:block text-neutral-400 text-xs italic mb-6">"{mode.tagline}"</p>
+                        <p className={`hidden md:block text-xs italic mb-6 ${isDark ? 'text-neutral-400' : 'text-gray-500'}`}>"{mode.tagline}"</p>
 
                         {/* Meta info - desktop */}
-                        <div className="hidden md:flex items-center gap-4 text-xs text-neutral-500">
+                        <div className={`hidden md:flex items-center gap-4 text-xs ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}>
                           <span className="flex items-center gap-1.5">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -546,7 +570,7 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
           transition={{ delay: 0.8 }}
           className="hidden md:block text-center mt-6 md:mt-12"
         >
-          <p className="text-neutral-600 text-sm">
+          <p className={`text-sm ${isDark ? 'text-neutral-600' : 'text-gray-500'}`}>
             Powered by Big Five personality research
           </p>
         </motion.div>
@@ -557,11 +581,11 @@ export default function ModeSelection({ onSelectMode, userHistory = [], onViewHi
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 1 }}
-        className="hidden md:flex fixed bottom-6 left-1/2 -translate-x-1/2 items-center gap-2 text-neutral-500 text-xs"
+        className={`hidden md:flex fixed bottom-6 left-1/2 -translate-x-1/2 items-center gap-2 text-xs ${isDark ? 'text-neutral-500' : 'text-gray-500'}`}
       >
-        <kbd className="px-2 py-1 bg-neutral-800 rounded border border-neutral-700 text-neutral-400">1</kbd>
-        <kbd className="px-2 py-1 bg-neutral-800 rounded border border-neutral-700 text-neutral-400">2</kbd>
-        <kbd className="px-2 py-1 bg-neutral-800 rounded border border-neutral-700 text-neutral-400">3</kbd>
+        <kbd className={`px-2 py-1 rounded border ${isDark ? 'bg-neutral-800 border-neutral-700 text-neutral-400' : 'bg-white border-gray-300 text-gray-600 shadow-sm'}`}>1</kbd>
+        <kbd className={`px-2 py-1 rounded border ${isDark ? 'bg-neutral-800 border-neutral-700 text-neutral-400' : 'bg-white border-gray-300 text-gray-600 shadow-sm'}`}>2</kbd>
+        <kbd className={`px-2 py-1 rounded border ${isDark ? 'bg-neutral-800 border-neutral-700 text-neutral-400' : 'bg-white border-gray-300 text-gray-600 shadow-sm'}`}>3</kbd>
         <span className="ml-2">to select</span>
       </motion.div>
     </div>

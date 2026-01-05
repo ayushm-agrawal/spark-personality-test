@@ -6,9 +6,11 @@ import InterestInput from './components/InterestInput';
 import Assessment from './components/Assessment';
 import Results from './components/Results';
 import GoogleSignInButton from './components/GoogleSignInButton';
+import ThemeToggle from './components/ThemeToggle';
 import ArchetypeGallery from './components/ArchetypeGallery';
 import ProfilePage from './components/ProfilePage';
 import { useAuth } from './contexts/AuthContext';
+import { useTheme } from './contexts/ThemeContext';
 import { saveAssessment, getUserAssessments, ensureUserProfile, assessmentToResults, getHasSeenProfile, markProfileAsSeen } from './services/assessmentHistory';
 import { Analytics } from './services/analytics';
 import * as api from './api';
@@ -37,6 +39,7 @@ function App() {
 
   // Auth state
   const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const { isDark } = useTheme();
   const [userHistory, setUserHistory] = useState([]);
   const [isViewingHistory, setIsViewingHistory] = useState(false);
   const [isLoadingUserData, setIsLoadingUserData] = useState(false);
@@ -531,7 +534,7 @@ function App() {
   // Show loading screen while auth is initializing OR user data is loading (for authenticated users)
   if (authLoading || (isAuthenticated && isLoadingUserData)) {
     return (
-      <div className="min-h-screen bg-[#09090b] flex items-center justify-center">
+      <div className={`min-h-screen flex items-center justify-center ${isDark ? 'bg-[#09090b]' : 'bg-neutral-50'}`}>
         <div className="animate-spin h-8 w-8 border-4 border-violet-500 border-t-transparent rounded-full" />
       </div>
     );
@@ -539,9 +542,10 @@ function App() {
 
   return (
     <div className="min-h-screen">
-      {/* Google Sign In Button - only on MODE and RESULTS screens */}
+      {/* Header controls - Theme toggle and Sign In */}
       {(step === STEPS.MODE || step === STEPS.RESULTS) && (
-        <div className="fixed top-4 right-4 z-50">
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+          <ThemeToggle />
           <GoogleSignInButton
             onViewProfile={handleViewProfile}
             showProfileBadge={isAuthenticated && userHistory.length > 0 && !hasSeenProfile}
@@ -573,7 +577,9 @@ function App() {
       {step !== STEPS.MODE && step !== STEPS.RESULTS && (
         <button
           onClick={resetTest}
-          className="fixed top-4 left-4 z-40 px-3 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+          className={`fixed top-4 left-4 z-40 px-3 py-2 text-sm transition-colors ${
+            isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+          }`}
         >
           ← Start Over
         </button>
@@ -671,7 +677,7 @@ function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="min-h-screen bg-[#09090b] flex items-center justify-center px-6"
+            className={`min-h-screen flex items-center justify-center px-6 ${isDark ? 'bg-[#09090b]' : 'bg-neutral-50'}`}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -688,11 +694,11 @@ function App() {
                 <span className="text-4xl">🔍</span>
               </motion.div>
 
-              <h2 className="text-2xl font-bold text-white mb-3">
+              <h2 className={`text-2xl font-bold mb-3 ${isDark ? 'text-white' : 'text-gray-900'}`}>
                 We're getting a picture, but it's a bit fuzzy
               </h2>
 
-              <p className="text-neutral-400 mb-8">
+              <p className={`mb-8 ${isDark ? 'text-neutral-400' : 'text-gray-600'}`}>
                 {extensionOffer.message || "Want sharper results? Just 2 more questions."}
               </p>
 
@@ -715,14 +721,18 @@ function App() {
                 <button
                   onClick={handleDeclineExtension}
                   disabled={isLoading}
-                  className="w-full py-4 px-6 rounded-xl border border-neutral-700 text-neutral-300 hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                  className={`w-full py-4 px-6 rounded-xl border transition-colors disabled:opacity-50 ${
+                    isDark
+                      ? 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
                 >
                   Show me what you have
                 </button>
               </div>
 
               {extensionOffer.focus_traits && (
-                <p className="text-xs text-neutral-600 mt-6">
+                <p className={`text-xs mt-6 ${isDark ? 'text-neutral-600' : 'text-gray-500'}`}>
                   Focus areas: {extensionOffer.focus_traits.map(t => t.replace('_', ' ')).join(', ')}
                 </p>
               )}
@@ -735,7 +745,7 @@ function App() {
             key="results"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#09090b]"
+            className={isDark ? 'bg-[#09090b]' : 'bg-neutral-50'}
           >
             <Results
               results={results}
@@ -746,10 +756,14 @@ function App() {
               onViewGallery={handleViewGallery}
               holisticProfile={holisticProfile}
             />
-            <div className="text-center pb-12 bg-[#09090b]">
+            <div className={`text-center pb-12 ${isDark ? 'bg-[#09090b]' : 'bg-neutral-50'}`}>
               <button
                 onClick={resetTest}
-                className="px-6 py-3 rounded-xl bg-neutral-800 border border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white transition-colors"
+                className={`px-6 py-3 rounded-xl border transition-colors ${
+                  isDark
+                    ? 'bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700 hover:text-white'
+                    : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-100 hover:text-gray-900 shadow-sm'
+                }`}
               >
                 Take Another Test
               </button>
