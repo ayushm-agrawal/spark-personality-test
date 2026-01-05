@@ -10,26 +10,14 @@ import { auth, googleProvider } from '../firebase';
 
 const AuthContext = createContext(null);
 
-// Detect if we're on a real mobile device or in-app browser (not DevTools emulation)
-const shouldUseRedirect = () => {
-  // DevTools mobile emulation has maxTouchPoints = 0, real mobile has > 0
-  const isRealMobile = navigator.maxTouchPoints > 0;
-
-  // In localhost dev mode, always use popup (redirect has issues with StrictMode)
-  if (window.location.hostname === 'localhost') {
-    return false;
-  }
-
+// Detect if we're in an in-app browser where popups don't work
+const isInAppBrowser = () => {
   const ua = navigator.userAgent || navigator.vendor || window.opera;
-  // Use redirect for real mobile or in-app browsers
   return (
-    isRealMobile && (
-      /Android|iPhone|iPad|iPod/i.test(ua) ||
-      /FBAN|FBAV|Instagram|Twitter|Line|WhatsApp|Snapchat|Pinterest/i.test(ua) ||
-      /(iPhone|iPod|iPad).*AppleWebKit(?!.*Safari)/i.test(ua) ||
-      (/wv\)/.test(ua) && /Android/.test(ua)) ||
-      /WebView/i.test(ua)
-    )
+    /FBAN|FBAV|Instagram|Twitter|Line|WhatsApp|Snapchat|Pinterest/i.test(ua) ||
+    /(iPhone|iPod|iPad).*AppleWebKit(?!.*Safari)/i.test(ua) ||
+    (/wv\)/.test(ua) && /Android/.test(ua)) ||
+    /WebView/i.test(ua)
   );
 };
 
@@ -66,29 +54,38 @@ export function AuthProvider({ children }) {
   const signInWithGoogle = async () => {
     setAuthError(null);
 
-    if (shouldUseRedirect()) {
-      // Mobile/in-app browsers: use redirect
+    // Use redirect directly for in-app browsers (popups don't work there)
+    if (isInAppBrowser()) {
       try {
         await signInWithRedirect(auth, googleProvider);
+        return; // Won't reach here - page redirects
       } catch (error) {
         console.error('Google sign-in redirect error:', error);
         setAuthError(error.message);
         throw error;
       }
-    } else {
-      // Desktop: use popup (COOP warnings are harmless)
-      try {
-        const result = await signInWithPopup(auth, googleProvider);
-        return result.user;
-      } catch (error) {
-        if (error.code === 'auth/popup-blocked') {
-          // Fallback to redirect if popup blocked
+    }
+
+    // For regular browsers (desktop and mobile Safari/Chrome), try popup first
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      return result.user;
+    } catch (error) {
+      // If popup fails, fallback to redirect
+      if (error.code === 'auth/popup-blocked' ||
+          error.code === 'auth/popup-closed-by-user' ||
+          error.code === 'auth/cancelled-popup-request') {
+        try {
           await signInWithRedirect(auth, googleProvider);
-        } else {
-          console.error('Google sign-in error:', error);
-          setAuthError(error.message);
-          throw error;
+        } catch (redirectError) {
+          console.error('Redirect fallback failed:', redirectError);
+          setAuthError(redirectError.message);
+          throw redirectError;
         }
+      } else {
+        console.error('Google sign-in error:', error);
+        setAuthError(error.message);
+        throw error;
       }
     }
   };
