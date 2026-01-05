@@ -1605,6 +1605,27 @@ Return ONLY the JSON object, no markdown or commentary.
         # Check for suspicious patterns
         suspicious_patterns = detect_suspicious_patterns(session)
 
+        # Calculate quality weight for profile integration (Phase 2.5)
+        confidence_pct = score_confidence.get("confidence_pct", confidence)
+        quality_weight = calculate_test_quality_weight(
+            confidence_pct,
+            suspicious_patterns.get("suspicious", False),
+            suspicious_patterns.get("flags", [])
+        )
+        included_in_profile = quality_weight >= 0.15
+
+        # Store results in session for profile update
+        db.collection("sessions").document(session_id).update({
+            "results": {
+                "archetype": archetype_name,
+                "normalized_scores": normalized_scores,
+                "confidence": score_confidence,
+                "suspicious_patterns": suspicious_patterns,
+                "quality_weight": quality_weight,
+                "included_in_profile": included_in_profile
+            }
+        })
+
         return {
             "test_complete": True,
             "mode": mode,
@@ -1627,7 +1648,7 @@ Return ONLY the JSON object, no markdown or commentary.
             "archetype_confidence": confidence,
             "confidence": {
                 "tier": score_confidence.get("tier", "emerging"),
-                "confidence_pct": score_confidence.get("confidence_pct", confidence),
+                "confidence_pct": confidence_pct,
                 "explanation": score_confidence.get("explanation"),
                 "ambiguous_traits": score_confidence.get("ambiguous_traits", [])
             },
@@ -1637,6 +1658,9 @@ Return ONLY the JSON object, no markdown or commentary.
             "mode_specific": mode_specific,
             "interest": single_interest,  # For deep_dive mode with single interest
             "suspicious_patterns": suspicious_patterns if suspicious_patterns.get("suspicious") else None,
+            # Quality weighting data (Phase 2.5)
+            "quality_weight": quality_weight,
+            "included_in_profile": included_in_profile,
             # Legacy fields for backwards compatibility
             "suggested_archetype": archetype_name,
             "archetype_description": personalized_profile,
@@ -1744,6 +1768,307 @@ def generate_device_fingerprint(headers: dict) -> str:
     return hash_obj.hexdigest()[:32]
 
 
+# ============================================================================
+# HOLISTIC PROFILE FUNCTIONS (Phase 2.5)
+# ============================================================================
+
+def calculate_test_quality_weight(confidence_pct: float, suspicious: bool, flags: list) -> float:
+    """
+    Calculate how much this test should contribute to holistic profile.
+
+    Logic:
+    - Base weight = confidence_pct / 100 (0.0 to 1.0)
+    - If suspicious, multiply by 0.1 (heavy penalty)
+    - Specific flag penalties:
+      - "uniform" flag (all same answers): multiply by 0.0 (exclude entirely)
+      - "pattern" flag (a,b,c,a,b,c): multiply by 0.0 (exclude entirely)
+      - "speed" flag only: multiply by 0.5 (might be experienced user)
+      - "average" flag only: multiply by 0.8 (might be genuinely balanced)
+
+    Args:
+        confidence_pct: Confidence percentage from check_score_confidence (0-100)
+        suspicious: Whether suspicious patterns were detected
+        flags: List of flag dictionaries from detect_suspicious_patterns
+
+    Returns:
+        Float between 0.0 and 1.0 representing test quality weight
+    """
+    base_weight = confidence_pct / 100.0
+
+    # Extract flag types
+    flag_types = [f.get("type", "") for f in flags] if flags else []
+
+    # Check for exclusion flags (gaming behavior) - these get 0 weight
+    if "uniform" in flag_types or "pattern" in flag_types:
+        logging.info(f"[QUALITY] Test excluded due to gaming flags: {flag_types}")
+        return 0.0
+
+    weight = base_weight
+
+    if suspicious:
+        # Heavy penalty for suspicious tests
+        weight *= 0.1
+        logging.info(f"[QUALITY] Suspicious test penalty applied: {base_weight:.2f} -> {weight:.2f}")
+    else:
+        # Lighter penalties for individual flags
+        if "speed" in flag_types:
+            weight *= 0.5
+            logging.info(f"[QUALITY] Speed flag penalty applied")
+        if "average" in flag_types:
+            weight *= 0.8
+            logging.info(f"[QUALITY] Average flag penalty applied")
+
+    final_weight = round(weight, 2)
+    logging.info(f"[QUALITY] Final weight: {final_weight} (confidence: {confidence_pct}%, suspicious: {suspicious}, flags: {flag_types})")
+
+    return final_weight
+
+
+def get_traits_for_mode(mode: str) -> list:
+    """
+    Get the list of traits assessed for a given mode.
+
+    Args:
+        mode: Assessment mode ('hackathon', 'overall', 'deep_dive')
+
+    Returns:
+        List of trait names
+    """
+    mode_config = get_mode_config(mode)
+    traits_focus = mode_config.get("traits_focus", ["all"])
+
+    if traits_focus == ["all"] or "all" in traits_focus:
+        return ["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Emotional_Stability"]
+    else:
+        return traits_focus
+
+
+def calculate_holistic_scores(weighted_scores: dict) -> dict:
+    """
+    Convert weighted sums to normalized 0-100 scores.
+
+    Args:
+        weighted_scores: Dict of trait -> {"weighted_sum": float, "weight_total": float}
+
+    Returns:
+        Dict of trait -> normalized score (0-100)
+    """
+    holistic = {}
+    for trait, data in weighted_scores.items():
+        if data["weight_total"] > 0:
+            holistic[trait] = round(data["weighted_sum"] / data["weight_total"], 1)
+        else:
+            holistic[trait] = 50.0  # Neutral default
+    return holistic
+
+
+def calculate_stability(archetype_history: list) -> str:
+    """
+    Determine if results are converging, stable, or inconsistent.
+
+    Args:
+        archetype_history: List of archetype names from past tests
+
+    Returns:
+        One of: "new", "converging", "stable", "inconsistent"
+    """
+    if len(archetype_history) < 2:
+        return "new"
+
+    # Look at last 3 tests (or fewer if not enough)
+    recent = archetype_history[-3:]
+    unique_archetypes = set(recent)
+
+    if len(unique_archetypes) == 1:
+        if len(archetype_history) >= 3:
+            return "stable"
+        else:
+            return "converging"
+    elif len(unique_archetypes) == 2 and len(recent) >= 3:
+        # 2 out of 3 same = converging
+        from collections import Counter
+        counts = Counter(recent)
+        if max(counts.values()) >= 2:
+            return "converging"
+
+    return "inconsistent"
+
+
+def normalize_interest(interest: str) -> str:
+    """
+    Normalize interest string for consistent keying.
+
+    Handles variations like "Work", "work", "my job" -> "work"
+
+    Args:
+        interest: Raw interest string from user
+
+    Returns:
+        Normalized canonical interest key
+    """
+    if not interest:
+        return ""
+
+    # Lowercase and strip
+    normalized = interest.lower().strip()
+
+    # Common synonyms mapping to canonical keys
+    synonyms = {
+        "work": ["job", "career", "office", "professional", "at work", "my job", "my work", "workplace"],
+        "relationships": ["relationship", "dating", "love", "partner", "my relationship", "romantic"],
+        "fitness": ["gym", "health", "exercise", "working out", "sports", "training", "wellness"],
+        "family": ["parenting", "kids", "children", "home", "my family", "parent"],
+        "creative": ["creativity", "art", "creative projects", "side projects", "hobbies", "artistic"],
+        "learning": ["education", "school", "study", "studying", "growth", "self-improvement"]
+    }
+
+    for canonical, variants in synonyms.items():
+        if normalized in variants or normalized == canonical:
+            return canonical
+
+    # If no match, return cleaned original
+    return normalized
+
+
+def update_mode_profile(profile: dict, mode: str, normalized_scores: dict,
+                        archetype_name: str, quality_weight: float) -> bool:
+    """
+    Update the mode-specific profile with weighted scores from this test.
+
+    Args:
+        profile: The user profile dictionary (will be modified in place)
+        mode: Assessment mode ('hackathon', 'overall', 'deep_dive')
+        normalized_scores: Normalized trait scores (0-100) from this test
+        archetype_name: Archetype determined for this test
+        quality_weight: Quality weight for this test (0.0 to 1.0)
+
+    Returns:
+        bool: True if test was included in profile, False if excluded
+    """
+    # Initialize mode_profiles if doesn't exist
+    if "mode_profiles" not in profile:
+        profile["mode_profiles"] = {}
+
+    # Initialize this mode's profile if doesn't exist
+    if mode not in profile["mode_profiles"]:
+        traits = get_traits_for_mode(mode)
+        profile["mode_profiles"][mode] = {
+            "weighted_scores": {t: {"weighted_sum": 0.0, "weight_total": 0.0} for t in traits},
+            "tests_included": 0,
+            "tests_excluded": 0,
+            "current_archetype": None,
+            "archetype_history": [],
+            "stability": "new",
+            "confidence": 0
+        }
+
+    mode_profile = profile["mode_profiles"][mode]
+
+    # Inclusion threshold
+    INCLUSION_THRESHOLD = 0.15
+    included = quality_weight >= INCLUSION_THRESHOLD
+
+    if included:
+        # Add weighted scores
+        for trait, score in normalized_scores.items():
+            if trait in mode_profile["weighted_scores"]:
+                mode_profile["weighted_scores"][trait]["weighted_sum"] += score * quality_weight
+                mode_profile["weighted_scores"][trait]["weight_total"] += quality_weight
+
+        mode_profile["tests_included"] += 1
+        mode_profile["archetype_history"].append(archetype_name)
+        logging.info(f"[PROFILE] Test included in {mode} profile with weight {quality_weight}")
+    else:
+        mode_profile["tests_excluded"] += 1
+        logging.info(f"[PROFILE] Test excluded from {mode} profile (weight {quality_weight} < {INCLUSION_THRESHOLD})")
+
+    # Recalculate holistic archetype from weighted scores
+    if mode_profile["weighted_scores"]:
+        holistic_scores = calculate_holistic_scores(mode_profile["weighted_scores"])
+
+        # Only recalculate if we have actual data
+        if any(data["weight_total"] > 0 for data in mode_profile["weighted_scores"].values()):
+            # Create fake trait_counts for determine_archetype (each trait counted once per included test)
+            fake_trait_counts = {t: mode_profile["tests_included"] for t in holistic_scores.keys()}
+            holistic_result = determine_archetype(holistic_scores, fake_trait_counts)
+
+            mode_profile["current_archetype"] = holistic_result["archetype"]
+            mode_profile["confidence"] = holistic_result.get("score_confidence", {}).get("confidence_pct", 0)
+
+    mode_profile["stability"] = calculate_stability(mode_profile["archetype_history"])
+
+    return included
+
+
+def update_deep_dive_profile(profile: dict, interest: str, normalized_scores: dict,
+                             archetype_name: str, quality_weight: float) -> bool:
+    """
+    Update the deep dive profile for a specific interest with weighted scores.
+
+    Args:
+        profile: The user profile dictionary (will be modified in place)
+        interest: Normalized interest key (e.g., "work", "relationships")
+        normalized_scores: Normalized trait scores (0-100) from this test
+        archetype_name: Archetype determined for this test
+        quality_weight: Quality weight for this test (0.0 to 1.0)
+
+    Returns:
+        bool: True if test was included in profile, False if excluded
+    """
+    # Initialize deep_dive_profiles if doesn't exist
+    if "deep_dive_profiles" not in profile:
+        profile["deep_dive_profiles"] = {}
+
+    # Initialize this interest's profile if doesn't exist
+    if interest not in profile["deep_dive_profiles"]:
+        traits = get_traits_for_mode("deep_dive")
+        profile["deep_dive_profiles"][interest] = {
+            "weighted_scores": {t: {"weighted_sum": 0.0, "weight_total": 0.0} for t in traits},
+            "tests_included": 0,
+            "tests_excluded": 0,
+            "current_archetype": None,
+            "archetype_history": [],
+            "stability": "new",
+            "confidence": 0
+        }
+
+    interest_profile = profile["deep_dive_profiles"][interest]
+
+    # Inclusion threshold
+    INCLUSION_THRESHOLD = 0.15
+    included = quality_weight >= INCLUSION_THRESHOLD
+
+    if included:
+        # Add weighted scores
+        for trait, score in normalized_scores.items():
+            if trait in interest_profile["weighted_scores"]:
+                interest_profile["weighted_scores"][trait]["weighted_sum"] += score * quality_weight
+                interest_profile["weighted_scores"][trait]["weight_total"] += quality_weight
+
+        interest_profile["tests_included"] += 1
+        interest_profile["archetype_history"].append(archetype_name)
+        logging.info(f"[PROFILE] Test included in deep_dive/{interest} profile with weight {quality_weight}")
+    else:
+        interest_profile["tests_excluded"] += 1
+        logging.info(f"[PROFILE] Test excluded from deep_dive/{interest} profile (weight {quality_weight} < {INCLUSION_THRESHOLD})")
+
+    # Recalculate holistic archetype from weighted scores
+    if interest_profile["weighted_scores"]:
+        holistic_scores = calculate_holistic_scores(interest_profile["weighted_scores"])
+
+        # Only recalculate if we have actual data
+        if any(data["weight_total"] > 0 for data in interest_profile["weighted_scores"].values()):
+            fake_trait_counts = {t: interest_profile["tests_included"] for t in holistic_scores.keys()}
+            holistic_result = determine_archetype(holistic_scores, fake_trait_counts)
+
+            interest_profile["current_archetype"] = holistic_result["archetype"]
+            interest_profile["confidence"] = holistic_result.get("score_confidence", {}).get("confidence_pct", 0)
+
+    interest_profile["stability"] = calculate_stability(interest_profile["archetype_history"])
+
+    return included
+
+
 def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -> dict:
     """
     Get existing profile or create a new one.
@@ -1790,12 +2115,19 @@ def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -
 
             return profile
 
-    # 4. Create new profile
+    # 4. Create new profile with Phase 2.5 schema
     new_profile = {
         "user_id": user_id,
         "device_fingerprint": device_fingerprint,
         "created_at": time.time(),
         "updated_at": time.time(),
+        # Mode-specific profiles with weighted scores (Phase 2.5)
+        "mode_profiles": {},
+        # Deep dive profiles keyed by normalized interest
+        "deep_dive_profiles": {},
+        # Full test history with quality metrics
+        "test_history": [],
+        # Legacy fields for backwards compatibility
         "cumulative_scores": {
             "Openness": {"total_points": 0, "total_questions": 0},
             "Conscientiousness": {"total_points": 0, "total_questions": 0},
@@ -1803,10 +2135,8 @@ def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -
             "Agreeableness": {"total_points": 0, "total_questions": 0},
             "Emotional_Stability": {"total_points": 0, "total_questions": 0}
         },
-        "test_history": [],
         "current_archetype": None,
-        "overall_confidence": 0,
-        "deep_dive_profiles": {}
+        "overall_confidence": 0
     }
 
     doc_ref = profiles_ref.add(new_profile)
@@ -1815,19 +2145,23 @@ def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -
     return new_profile
 
 
-def update_profile_after_test(profile_id: str, session: dict, result: dict) -> dict:
+def update_profile_after_test(profile_id: str, session: dict, result: dict,
+                              confidence: dict, suspicion: dict) -> dict:
     """
-    Update user profile after completing a test.
+    Update user profile after completing a test with quality weighting (Phase 2.5).
 
-    Increments cumulative scores, adds test to history, updates archetype.
+    Uses weighted score accumulation to build holistic profiles per mode.
+    Tests with suspicious patterns are down-weighted or excluded.
 
     Args:
         profile_id: Firestore profile document ID
         session: The session dictionary
-        result: The finalized test result
+        result: The finalized test result (with archetype, normalized_scores, etc.)
+        confidence: Confidence data from check_score_confidence
+        suspicion: Suspicion data from detect_suspicious_patterns
 
     Returns:
-        Updated profile dictionary
+        Updated profile dictionary with holistic data
     """
     profile_ref = db.collection("user_profiles").document(profile_id)
     profile = profile_ref.get().to_dict()
@@ -1836,11 +2170,60 @@ def update_profile_after_test(profile_id: str, session: dict, result: dict) -> d
         return {"error": "Profile not found"}
 
     mode = session.get("mode", "overall")
+    session_id = session.get("session_id") or profile_id[:8]  # Fallback
     scores = session.get("scores", {})
     trait_counts = session.get("trait_counts", {})
     interest = session.get("interest")  # For deep dive mode
+    normalized_scores = result.get("normalized_scores", {})
+    archetype_name = result.get("archetype", {}).get("name") if isinstance(result.get("archetype"), dict) else result.get("archetype")
 
-    # Update cumulative scores
+    # Initialize mode_profiles if doesn't exist (for older profiles)
+    if "mode_profiles" not in profile:
+        profile["mode_profiles"] = {}
+
+    # Calculate quality weight
+    confidence_pct = confidence.get("confidence_pct", 50)
+    suspicious = suspicion.get("suspicious", False)
+    flags = suspicion.get("flags", [])
+    quality_weight = calculate_test_quality_weight(confidence_pct, suspicious, flags)
+
+    # Update mode or deep_dive profile with weighted scores
+    if mode == "deep_dive" and interest:
+        normalized_interest = normalize_interest(interest)
+        included = update_deep_dive_profile(
+            profile, normalized_interest, normalized_scores, archetype_name, quality_weight
+        )
+    else:
+        included = update_mode_profile(
+            profile, mode, normalized_scores, archetype_name, quality_weight
+        )
+
+    # Create enhanced test record for history
+    test_record = {
+        "session_id": session_id,
+        "mode": mode,
+        "interest": interest,
+        "date": time.time(),
+        "raw_scores": scores,
+        "normalized_scores": normalized_scores,
+        "archetype": archetype_name,
+        "confidence_pct": confidence_pct,
+        "confidence_tier": confidence.get("tier", "emerging"),
+        "suspicious": suspicious,
+        "flags": flags,
+        "quality_weight": quality_weight,
+        "included_in_profile": included,
+        "response_times": list(session.get("response_times", {}).values()),
+        "answer_count": len(session.get("answer_history", []))
+    }
+
+    # Update test history (keep last 50 for auditability)
+    test_history = profile.get("test_history", [])
+    test_history.append(test_record)
+    if len(test_history) > 50:
+        test_history = test_history[-50:]
+
+    # Legacy: Update cumulative scores for backwards compatibility
     cumulative = profile.get("cumulative_scores", {})
     for trait, score in scores.items():
         if trait not in cumulative:
@@ -1848,55 +2231,34 @@ def update_profile_after_test(profile_id: str, session: dict, result: dict) -> d
         cumulative[trait]["total_points"] += score
         cumulative[trait]["total_questions"] += trait_counts.get(trait, 0)
 
-    # Create test record
-    test_record = {
-        "session_id": session.get("session_id"),
-        "mode": mode,
-        "date": time.time(),
-        "archetype": result.get("archetype", {}).get("name"),
-        "confidence_tier": result.get("confidence", {}).get("tier"),
-        "confidence_pct": result.get("confidence", {}).get("confidence_pct"),
-        "normalized_scores": result.get("normalized_scores", {})
-    }
+    # Legacy: Update current_archetype (most recent)
+    profile["current_archetype"] = archetype_name
+    profile["overall_confidence"] = confidence_pct
 
-    if mode == "deep_dive" and interest:
-        test_record["interest"] = interest
-
-    # Update test history (keep last 20)
-    test_history = profile.get("test_history", [])
-    test_history.append(test_record)
-    if len(test_history) > 20:
-        test_history = test_history[-20:]
-
-    # Update current archetype and confidence
-    archetype_name = result.get("archetype", {}).get("name")
-    confidence_pct = result.get("confidence", {}).get("confidence_pct", 0)
-
-    # Update deep dive profiles if applicable
-    deep_dive_profiles = profile.get("deep_dive_profiles", {})
-    if mode == "deep_dive" and interest:
-        deep_dive_profiles[interest] = {
-            "archetype": archetype_name,
-            "scores": result.get("normalized_scores", {}),
-            "confidence": confidence_pct,
-            "date": time.time()
-        }
-
-    # Write updates
+    # Write all updates
     profile_ref.update({
-        "cumulative_scores": cumulative,
+        "mode_profiles": profile.get("mode_profiles", {}),
+        "deep_dive_profiles": profile.get("deep_dive_profiles", {}),
         "test_history": test_history,
+        "cumulative_scores": cumulative,
         "current_archetype": archetype_name,
         "overall_confidence": confidence_pct,
-        "deep_dive_profiles": deep_dive_profiles,
         "updated_at": time.time()
     })
 
-    profile["cumulative_scores"] = cumulative
     profile["test_history"] = test_history
-    profile["current_archetype"] = archetype_name
-    profile["overall_confidence"] = confidence_pct
-    profile["deep_dive_profiles"] = deep_dive_profiles
+    profile["cumulative_scores"] = cumulative
+
+    # Add holistic data to return
+    if mode == "deep_dive" and interest:
+        normalized_interest = normalize_interest(interest)
+        holistic = profile.get("deep_dive_profiles", {}).get(normalized_interest)
+    else:
+        holistic = profile.get("mode_profiles", {}).get(mode)
+
+    profile["_holistic"] = holistic
+    profile["_quality_weight"] = quality_weight
+    profile["_included_in_profile"] = included
 
     return profile
 

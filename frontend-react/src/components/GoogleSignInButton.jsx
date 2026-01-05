@@ -12,7 +12,7 @@ const GoogleLogo = ({ className = "w-4 h-4" }) => (
   </svg>
 );
 
-export default function GoogleSignInButton({ variant = 'icon' }) {
+export default function GoogleSignInButton({ variant = 'icon', onViewProfile = null, showProfileBadge = false }) {
   const { signInWithGoogle, isAuthenticated, user, logout, loading } = useAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
@@ -46,27 +46,68 @@ export default function GoogleSignInButton({ variant = 'icon' }) {
 
   // Authenticated state - show user avatar with dropdown
   if (isAuthenticated && user) {
+    const handleProfileClick = () => {
+      setIsMenuOpen(false);
+      if (onViewProfile) onViewProfile();
+    };
+
     return (
       <div className="relative">
         <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
           onClick={() => setIsMenuOpen(!isMenuOpen)}
-          className="w-8 h-8 rounded-full overflow-hidden border-2 border-neutral-700 hover:border-violet-400 transition-colors focus:outline-none focus:border-violet-400"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-800/80 border border-neutral-700 hover:border-violet-400 transition-colors focus:outline-none focus:border-violet-400"
         >
-          {user.photoURL ? (
-            <img
-              src={user.photoURL}
-              alt={user.displayName || 'User'}
-              className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <div className="w-full h-full bg-violet-600 flex items-center justify-center text-white text-sm font-semibold">
-              {(user.displayName || user.email || 'U')[0].toUpperCase()}
+          <div className="relative">
+            <div className="w-7 h-7 rounded-full overflow-hidden">
+              {user.photoURL ? (
+                <img
+                  src={user.photoURL}
+                  alt={user.displayName || 'User'}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-full h-full bg-violet-600 flex items-center justify-center text-white text-xs font-semibold">
+                  {(user.displayName || user.email || 'U')[0].toUpperCase()}
+                </div>
+              )}
             </div>
-          )}
+            {/* Animated badge for new profile feature */}
+            {showProfileBadge && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-1 -right-1"
+              >
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-violet-500"></span>
+                </span>
+              </motion.div>
+            )}
+          </div>
+          <span className="text-sm text-neutral-300 hidden sm:block max-w-[100px] truncate">
+            {user.displayName?.split(' ')[0] || 'Profile'}
+          </span>
+          <svg className="w-4 h-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         </motion.button>
+
+        {/* Tooltip for badge */}
+        {showProfileBadge && !isMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1 }}
+            className="absolute right-0 top-12 z-40 px-3 py-2 bg-violet-600 text-white text-xs rounded-lg shadow-lg whitespace-nowrap"
+          >
+            <div className="absolute -top-1.5 right-4 w-3 h-3 bg-violet-600 rotate-45"></div>
+            View your personality profile!
+          </motion.div>
+        )}
 
         <AnimatePresence>
           {isMenuOpen && (
@@ -82,7 +123,7 @@ export default function GoogleSignInButton({ variant = 'icon' }) {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -10, scale: 0.95 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-10 z-50 bg-neutral-800 rounded-lg shadow-xl border border-neutral-700 py-2 min-w-[160px]"
+                className="absolute right-0 top-12 z-50 bg-neutral-800 rounded-xl shadow-xl border border-neutral-700 py-2 min-w-[180px]"
               >
                 <div className="px-4 py-2 border-b border-neutral-700">
                   <p className="text-sm text-white font-medium truncate">
@@ -92,10 +133,27 @@ export default function GoogleSignInButton({ variant = 'icon' }) {
                     {user.email}
                   </p>
                 </div>
+
+                {/* My Profile button */}
+                {onViewProfile && (
+                  <button
+                    onClick={handleProfileClick}
+                    className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-neutral-700 transition-colors flex items-center gap-3"
+                  >
+                    <svg className="w-4 h-4 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    My Profile
+                  </button>
+                )}
+
                 <button
                   onClick={handleLogout}
-                  className="w-full px-4 py-2 text-left text-sm text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors"
+                  className="w-full px-4 py-2.5 text-left text-sm text-neutral-400 hover:bg-neutral-700 hover:text-white transition-colors flex items-center gap-3"
                 >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
                   Sign Out
                 </button>
               </motion.div>
@@ -110,17 +168,20 @@ export default function GoogleSignInButton({ variant = 'icon' }) {
   if (variant === 'icon') {
     return (
       <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
         onClick={handleSignIn}
         disabled={isSigningIn}
-        className="w-8 h-8 rounded-full bg-neutral-800 border border-neutral-700 hover:border-neutral-600 flex items-center justify-center transition-colors disabled:opacity-50"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-800/80 border border-neutral-700 hover:border-violet-400 transition-colors disabled:opacity-50"
         title="Sign in with Google"
       >
         {isSigningIn ? (
           <div className="w-4 h-4 border-2 border-neutral-500 border-t-white rounded-full animate-spin" />
         ) : (
-          <GoogleLogo />
+          <>
+            <GoogleLogo className="w-4 h-4" />
+            <span className="text-sm text-neutral-300">Sign in</span>
+          </>
         )}
       </motion.button>
     );

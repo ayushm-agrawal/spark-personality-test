@@ -7,8 +7,9 @@ import Assessment from './components/Assessment';
 import Results from './components/Results';
 import GoogleSignInButton from './components/GoogleSignInButton';
 import ArchetypeGallery from './components/ArchetypeGallery';
+import ProfilePage from './components/ProfilePage';
 import { useAuth } from './contexts/AuthContext';
-import { saveAssessment, getUserAssessments, ensureUserProfile, assessmentToResults } from './services/assessmentHistory';
+import { saveAssessment, getUserAssessments, ensureUserProfile, assessmentToResults, getHasSeenProfile, markProfileAsSeen } from './services/assessmentHistory';
 import { Analytics } from './services/analytics';
 import * as api from './api';
 
@@ -40,8 +41,16 @@ function App() {
   const [isViewingHistory, setIsViewingHistory] = useState(false);
   const resultsSavedRef = useRef(false);
 
+  // Holistic profile state
+  const [profileId, setProfileId] = useState(null);
+  const [holisticProfile, setHolisticProfile] = useState(null);
+
   // Gallery state
   const [showGallery, setShowGallery] = useState(false);
+
+  // Profile page state
+  const [showProfile, setShowProfile] = useState(false);
+  const [hasSeenProfile, setHasSeenProfile] = useState(true); // Default true to not show badge initially
 
   // Extension offer state
   const [extensionOffer, setExtensionOffer] = useState(null);
@@ -54,17 +63,38 @@ function App() {
   const testStartTimeRef = useRef(null);
   const questionStartTimeRef = useRef(null);
 
-  // Load user history when authenticated
+  // Load user history and profile when authenticated
   useEffect(() => {
     if (isAuthenticated && user) {
       // Ensure user profile exists
       ensureUserProfile(user).catch(console.error);
-      // Load assessment history
+
+      // Load assessment history and check if should show profile badge
       getUserAssessments(user.uid)
-        .then(setUserHistory)
+        .then(assessments => {
+          setUserHistory(assessments);
+          // If user has at least 1 assessment, check if they've seen profile
+          if (assessments.length > 0) {
+            getHasSeenProfile(user.uid)
+              .then(seen => setHasSeenProfile(seen))
+              .catch(() => setHasSeenProfile(true));
+          }
+        })
+        .catch(console.error);
+
+      // Get or create holistic profile
+      api.getOrCreateProfile(user.uid, null)
+        .then(profile => {
+          if (profile && profile.profile_id) {
+            setProfileId(profile.profile_id);
+          }
+        })
         .catch(console.error);
     } else {
       setUserHistory([]);
+      setProfileId(null);
+      setHolisticProfile(null);
+      setHasSeenProfile(true); // Reset to hide badge when logged out
     }
   }, [isAuthenticated, user]);
 
@@ -76,14 +106,24 @@ function App() {
         .then(() => getUserAssessments(user.uid))
         .then(setUserHistory)
         .catch(console.error);
+
+      // Update holistic profile if we have a profile ID and session ID
+      if (profileId && sessionId) {
+        api.updateProfile(profileId, sessionId)
+          .then(profileData => {
+            setHolisticProfile(profileData);
+          })
+          .catch(console.error);
+      }
     }
-  }, [results, isAuthenticated, user, isViewingHistory]);
+  }, [results, isAuthenticated, user, isViewingHistory, profileId, sessionId]);
 
   // Reset saved ref when starting new test
   useEffect(() => {
     if (step === STEPS.MODE) {
       resultsSavedRef.current = false;
       setIsViewingHistory(false);
+      setHolisticProfile(null);
     }
   }, [step]);
 
@@ -105,6 +145,21 @@ function App() {
 
   const handleCloseGallery = () => {
     setShowGallery(false);
+  };
+
+  // Handle viewing profile page
+  const handleViewProfile = () => {
+    setShowProfile(true);
+    // Mark profile as seen to hide the badge
+    if (user && !hasSeenProfile) {
+      markProfileAsSeen(user.uid)
+        .then(() => setHasSeenProfile(true))
+        .catch(console.error);
+    }
+  };
+
+  const handleCloseProfile = () => {
+    setShowProfile(false);
   };
 
   // Try to restore session from localStorage
@@ -457,6 +512,7 @@ function App() {
     setExtensionOffer(null);
     setPendingResults(null);
     setDeepDiveInterest(null);
+    setHolisticProfile(null);
   };
 
   return (
@@ -464,7 +520,10 @@ function App() {
       {/* Google Sign In Button - only on MODE and RESULTS screens */}
       {(step === STEPS.MODE || step === STEPS.RESULTS) && (
         <div className="fixed top-4 right-4 z-50">
-          <GoogleSignInButton />
+          <GoogleSignInButton
+            onViewProfile={handleViewProfile}
+            showProfileBadge={isAuthenticated && userHistory.length > 0 && !hasSeenProfile}
+          />
         </div>
       )}
 
@@ -661,6 +720,7 @@ function App() {
               onFeedback={handleFeedback}
               showSavePrompt={!isAuthenticated && !isViewingHistory}
               onViewGallery={handleViewGallery}
+              holisticProfile={holisticProfile}
             />
             <div className="text-center pb-12 bg-[#09090b]">
               <button
@@ -680,6 +740,16 @@ function App() {
           <ArchetypeGallery
             onClose={handleCloseGallery}
             userArchetype={results?.archetype?.name || userHistory[0]?.archetype?.name}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Profile Page Modal */}
+      <AnimatePresence>
+        {showProfile && (
+          <ProfilePage
+            onClose={handleCloseProfile}
+            onStartTest={resetTest}
           />
         )}
       </AnimatePresence>
