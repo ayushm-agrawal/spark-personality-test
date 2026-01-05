@@ -9,6 +9,7 @@ import Results from './components/Results';
 import GoogleSignInButton from './components/GoogleSignInButton';
 import ArchetypeGallery from './components/ArchetypeGallery';
 import TutorialModal from './components/TutorialModal';
+import { OfflineBanner } from './components/shared';
 import { useAuth } from './contexts/AuthContext';
 import { saveAssessment, getUserAssessments, ensureUserProfile, assessmentToResults, getHasSeenProfile, markProfileAsSeen } from './services/assessmentHistory';
 import { Analytics } from './services/analytics';
@@ -605,6 +606,9 @@ function App() {
 
   return (
     <div className="min-h-screen">
+      {/* Offline status banner */}
+      <OfflineBanner />
+
       {/* Google Sign In Button - only on MODE and RESULTS screens */}
       {(step === STEPS.MODE || step === STEPS.RESULTS) && (
         <div className={`fixed top-4 right-4 z-[101] ${highlightSignIn ? 'animate-pulse' : ''}`}>
