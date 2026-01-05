@@ -866,7 +866,30 @@ function ConfidenceInfo({ confidence, archetypeColor }) {
   );
 }
 
-export default function Results({ results, mode, interest, onFeedback, showSavePrompt = false, onViewGallery }) {
+// Stability badge component
+function StabilityBadge({ stability }) {
+  const config = {
+    stable: { label: 'Stable', color: '#22c55e', icon: '✓', description: 'Your results are consistent' },
+    converging: { label: 'Converging', color: '#eab308', icon: '→', description: 'Your profile is becoming clearer' },
+    inconsistent: { label: 'Variable', color: '#f97316', icon: '~', description: 'Results vary between tests' },
+    new: { label: 'New', color: '#a78bfa', icon: '★', description: 'Take more tests for better accuracy' },
+  };
+
+  const { label, color, icon, description } = config[stability] || config.new;
+
+  return (
+    <div
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+      style={{ backgroundColor: `${color}20`, color }}
+      title={description}
+    >
+      <span>{icon}</span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+export default function Results({ results, mode, interest, onFeedback, showSavePrompt = false, onViewGallery, holisticProfile = null }) {
   const [phase, setPhase] = useState('loading');
   const [showDetails, setShowDetails] = useState(false);
   const [rating, setRating] = useState(0);
@@ -1101,7 +1124,87 @@ export default function Results({ results, mode, interest, onFeedback, showSaveP
                     <p className="text-sm text-orange-200">{confidenceData.explanation}</p>
                   </motion.div>
                 )}
+
+                {/* Test not included in profile warning */}
+                {holisticProfile && holisticProfile.included_in_profile === false && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-4 mx-auto max-w-md p-3 rounded-xl bg-neutral-800/60 border border-neutral-700"
+                  >
+                    <p className="text-sm text-neutral-400">
+                      This test wasn't included in your holistic profile due to unusual response patterns.
+                    </p>
+                  </motion.div>
+                )}
               </div>
+
+              {/* Holistic Profile Section - shown when user has multiple tests */}
+              {holisticProfile && holisticProfile.holistic && holisticProfile.holistic.tests_included > 1 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="mb-8 p-5 rounded-2xl bg-gradient-to-br from-neutral-900/80 to-neutral-800/60 border border-neutral-700"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-violet-500/20 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-semibold text-white">Your Holistic Profile</h3>
+                        <p className="text-sm text-neutral-400">
+                          Based on {holisticProfile.holistic.tests_included} test{holisticProfile.holistic.tests_included > 1 ? 's' : ''}
+                          {holisticProfile.holistic.tests_excluded > 0 && (
+                            <span className="text-neutral-500"> ({holisticProfile.holistic.tests_excluded} excluded)</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <StabilityBadge stability={holisticProfile.holistic.stability} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-neutral-800/50">
+                      <p className="text-neutral-500 text-sm mb-1">Overall Archetype</p>
+                      <p className="text-xl font-bold" style={{ color: archetypeColor }}>
+                        {holisticProfile.holistic.archetype || archetypeName}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-neutral-800/50">
+                      <p className="text-neutral-500 text-sm mb-1">Overall Confidence</p>
+                      <p className="text-xl font-bold text-white">
+                        {Math.round(holisticProfile.holistic.confidence || 0)}%
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Show if this test result differs from holistic */}
+                  {holisticProfile.holistic.archetype && holisticProfile.holistic.archetype !== archetypeName && (
+                    <div className="mt-4 pt-4 border-t border-neutral-700">
+                      <p className="text-sm text-neutral-400">
+                        <span className="text-amber-400">Note:</span> This test gave you {archetypeName}, but your overall profile across multiple tests is {holisticProfile.holistic.archetype}.
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* This Test section header - only when holistic profile exists */}
+              {holisticProfile && holisticProfile.holistic && holisticProfile.holistic.tests_included > 1 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex items-center gap-3 mb-4"
+                >
+                  <div className="h-px flex-1 bg-neutral-800" />
+                  <span className="text-sm text-neutral-500 font-medium">This Test</span>
+                  <div className="h-px flex-1 bg-neutral-800" />
+                </motion.div>
+              )}
 
               {/* Trait circles - grid on mobile, flex row on desktop */}
               <motion.div
