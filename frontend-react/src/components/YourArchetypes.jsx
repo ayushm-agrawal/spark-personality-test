@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { profileModeToResults, getArchetypeColor } from '../utils/archetypeUtils';
+import StabilityBadge from './shared/StabilityBadge';
 
 // Mode display config
 const modeConfig = {
@@ -17,29 +18,6 @@ const modeConfig = {
     description: 'General personality profile'
   }
 };
-
-// Stability badge component
-function StabilityBadge({ stability, size = 'sm' }) {
-  const config = {
-    stable: { label: 'Stable', color: '#22c55e', icon: '✓' },
-    converging: { label: 'Converging', color: '#eab308', icon: '→' },
-    inconsistent: { label: 'Variable', color: '#f97316', icon: '~' },
-    new: { label: 'New', color: '#a78bfa', icon: '★' },
-  };
-
-  const { label, color, icon } = config[stability] || config.new;
-  const sizeClass = size === 'sm' ? 'text-[10px] px-1.5 py-0.5' : 'text-xs px-2 py-0.5';
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full font-medium ${sizeClass}`}
-      style={{ backgroundColor: `${color}20`, color }}
-    >
-      <span>{icon}</span>
-      <span>{label}</span>
-    </span>
-  );
-}
 
 // Individual archetype card (clickable)
 function ArchetypeCard({ mode, interest, archetype, testsIncluded, stability, color, onClick, isLoading }) {

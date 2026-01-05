@@ -8,19 +8,22 @@ import PublicProfile from './components/PublicProfile.jsx'
 import InsightsPage from './components/InsightsPage.jsx'
 import ProfilePage from './components/ProfilePage.jsx'
 import { AuthProvider } from './contexts/AuthContext'
+import ErrorBoundary from './components/shared/ErrorBoundary'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          <Route path="/" element={<App />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/u/:username" element={<PublicProfile />} />
-          <Route path="/insights/:archetypeId" element={<InsightsPage />} />
-        </Routes>
-        <SpeedInsights />
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<App />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/u/:username" element={<PublicProfile />} />
+            <Route path="/insights/:archetypeId" element={<InsightsPage />} />
+          </Routes>
+          <SpeedInsights />
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>,
 )
