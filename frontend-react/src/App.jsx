@@ -8,6 +8,7 @@ import GoogleSignInButton from './components/GoogleSignInButton';
 import ArchetypeGallery from './components/ArchetypeGallery';
 import { useAuth } from './contexts/AuthContext';
 import { saveAssessment, getUserAssessments, ensureUserProfile, assessmentToResults } from './services/assessmentHistory';
+import { Analytics } from './services/analytics';
 import * as api from './api';
 
 const STEPS = {
@@ -38,6 +39,10 @@ function App() {
 
   // Gallery state
   const [showGallery, setShowGallery] = useState(false);
+
+  // Timing refs for analytics
+  const testStartTimeRef = useRef(null);
+  const questionStartTimeRef = useRef(null);
 
   // Load user history when authenticated
   useEffect(() => {
@@ -78,11 +83,14 @@ function App() {
     setResults(assessmentToResults(assessment));
     setMode(assessment.mode);
     setStep(STEPS.RESULTS);
+    // Track history view
+    Analytics.historyResultViewed(assessment.archetype?.name || 'unknown');
   };
 
   // Handle viewing archetype gallery
   const handleViewGallery = () => {
     setShowGallery(true);
+    Analytics.archetypeGalleryViewed();
   };
 
   const handleCloseGallery = () => {
@@ -123,6 +131,7 @@ function App() {
   const handleModeSelect = async (selectedMode) => {
     setIsLoading(true);
     setError(null);
+    testStartTimeRef.current = Date.now();
 
     try {
       const response = await api.startTest(selectedMode);
@@ -130,6 +139,9 @@ function App() {
       setMode(selectedMode);
       setModeConfig(response.mode_config);
       setInterestConfig(response.interest_config || null);
+
+      // Track mode selection
+      Analytics.modeSelected(selectedMode, response.mode_config?.question_count || 10);
 
       // Handle UI flow based on backend response
       const uiFlow = response.ui_flow || {};
@@ -139,6 +151,7 @@ function App() {
         setCurrentQuestion(response.next_question);
         setQuestionNumber(1);
         setStep(STEPS.ASSESSMENT);
+        questionStartTimeRef.current = Date.now();
 
         saveSession({
           sessionId: response.session_id,
@@ -176,12 +189,20 @@ function App() {
     setIsLoading(true);
     setError(null);
 
+    // Track interests selection
+    if (interests && interests.length > 0) {
+      Analytics.interestsSelected(interests, interests.length);
+    } else {
+      Analytics.interestsSkipped();
+    }
+
     try {
       const response = await api.selectInterests(sessionId, interests);
       if (response.next_question) {
         setCurrentQuestion(response.next_question);
         setQuestionNumber(1);
         setStep(STEPS.ASSESSMENT);
+        questionStartTimeRef.current = Date.now();
 
         saveSession({
           sessionId,
@@ -201,6 +222,20 @@ function App() {
   };
 
   const handleAnswer = async (answer) => {
+    // Calculate response time for this question
+    const responseTimeMs = questionStartTimeRef.current
+      ? Date.now() - questionStartTimeRef.current
+      : 0;
+
+    // Track question answered
+    Analytics.questionAnswered(
+      questionNumber,
+      modeConfig?.question_count || 10,
+      currentQuestion?.trait || currentQuestion?.trait_targets?.[0] || 'unknown',
+      answer,
+      responseTimeMs
+    );
+
     // Show analyzing animation if this is the last question
     const isLastQuestion = questionNumber >= (modeConfig?.question_count || 10);
     if (isLastQuestion) {
@@ -223,10 +258,24 @@ function App() {
         setResults(response);
         setStep(STEPS.RESULTS);
         localStorage.removeItem('ception_session');
+
+        // Track test completion
+        const testDuration = testStartTimeRef.current
+          ? Date.now() - testStartTimeRef.current
+          : 0;
+        Analytics.testCompleted(
+          mode,
+          response.archetype?.name || response.suggested_archetype || 'unknown',
+          response.archetype?.confidence || response.archetype_confidence || 0,
+          response.scores || {},
+          testDuration
+        );
+        Analytics.setUserArchetype(response.archetype?.name || response.suggested_archetype);
       } else if (response.next_question) {
         // Move to next question
         setCurrentQuestion(response.next_question);
         setQuestionNumber(prev => prev + 1);
+        questionStartTimeRef.current = Date.now();
 
         saveSession({
           sessionId,
@@ -255,6 +304,8 @@ function App() {
   const handleFeedback = async (rating) => {
     const archetype = results?.archetype?.name || results?.suggested_archetype;
     if (sessionId && archetype) {
+      // Track feedback submission
+      Analytics.feedbackSubmitted(rating, archetype);
       try {
         await api.submitFeedback(sessionId, rating, archetype);
       } catch (err) {

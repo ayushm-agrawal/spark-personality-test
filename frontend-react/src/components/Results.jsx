@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import GoogleSignInButton from './GoogleSignInButton';
+import { Analytics } from '../services/analytics';
 
 // Trait configuration
 const traitConfig = [
@@ -480,6 +481,9 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, zoneOf
     if (!cardRef.current) return;
     setIsGenerating(true);
 
+    // Track share attempt
+    Analytics.shareClicked('instagram_story');
+
     try {
       // Dynamic import html2canvas
       const html2canvas = (await import('html2canvas')).default;
@@ -528,6 +532,7 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, zoneOf
         if (navigator.canShare(shareData)) {
           try {
             await navigator.share(shareData);
+            Analytics.shareCompleted('web_share_api');
             setIsGenerating(false);
             return; // Success - user shared or saved via share sheet
           } catch (shareError) {
@@ -550,6 +555,7 @@ function InstagramStoryCard({ archetype, archetypeColor, tagline, traits, zoneOf
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      Analytics.shareCompleted('download');
       setIsGenerating(false);
 
     } catch (error) {

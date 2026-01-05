@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Analytics } from '../services/analytics';
 
 // Trait colors for visualization
 const traitConfig = [
@@ -261,6 +262,11 @@ export default function Assessment({
   const isMultipleChoice = question?.type === 'multiple-choice';
   const options = isMultipleChoice ? Object.entries(question?.options || {}) : [];
   const isInTransition = view === VIEW.TRANSITION;
+
+  // Track screen view on mount
+  useEffect(() => {
+    Analytics.screenView('assessment');
+  }, []);
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e) => {
