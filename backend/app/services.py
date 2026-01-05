@@ -2115,12 +2115,13 @@ def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -
 
             return profile
 
-    # 4. Create new profile with Phase 2.5 schema
+    # 4. Create new profile with Phase 3 schema
+    current_time = time.time()
     new_profile = {
         "user_id": user_id,
         "device_fingerprint": device_fingerprint,
-        "created_at": time.time(),
-        "updated_at": time.time(),
+        "created_at": current_time,
+        "updated_at": current_time,
         # Mode-specific profiles with weighted scores (Phase 2.5)
         "mode_profiles": {},
         # Deep dive profiles keyed by normalized interest
@@ -2136,7 +2137,20 @@ def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -
             "Emotional_Stability": {"total_points": 0, "total_questions": 0}
         },
         "current_archetype": None,
-        "overall_confidence": 0
+        "overall_confidence": 0,
+        # Phase 3: Badge tracking
+        "badges_earned": [],  # Array of {badge_id, earned_at, context}
+        "badge_progress": {},  # Progress toward incomplete badges
+        # Phase 3: Engagement tracking (for badge triggers)
+        "total_assessments_completed": 0,
+        "assessment_types_completed": [],  # Which modes they've done
+        "insights_viewed": {},  # {archetype: {section: timestamp}}
+        "last_active_at": current_time,
+        "weekly_visits": [],  # Array of timestamps for streak tracking
+        "consistency_scores": [],  # Scores from each assessment
+        # Phase 3: Profile display preferences
+        "insight_mode": "concise",  # "concise" or "deep"
+        "badges_visibility": "public"  # "public" or "private"
     }
 
     doc_ref = profiles_ref.add(new_profile)
