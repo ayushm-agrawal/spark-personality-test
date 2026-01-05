@@ -2152,24 +2152,9 @@ def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -
 import re
 import string
 
-def generate_username_base(display_name: str) -> str:
-    """
-    Generate a base username from a display name.
-    Converts to lowercase, replaces spaces with dashes, removes special chars.
-    """
-    if not display_name:
-        return "user"
-
-    # Lowercase and replace spaces with dashes
-    base = display_name.lower().strip().replace(" ", "-")
-    # Remove special characters, keep only alphanumeric and dashes
-    base = re.sub(r'[^a-z0-9-]', '', base)
-    # Remove consecutive dashes
-    base = re.sub(r'-+', '-', base)
-    # Remove leading/trailing dashes
-    base = base.strip('-')
-
-    return base if base else "user"
+def clean_name_part(name: str) -> str:
+    """Clean a name part for use in username - lowercase, alphanumeric only."""
+    return re.sub(r'[^a-z0-9]', '', name.lower().strip())
 
 
 def generate_random_suffix(length: int = 4) -> str:
@@ -2189,27 +2174,65 @@ def is_username_available(username: str) -> bool:
     return len(docs) == 0
 
 
-def generate_unique_username(display_name: str, max_attempts: int = 10) -> str:
+def generate_unique_username(display_name: str) -> str:
     """
-    Generate a unique username from a display name.
-    If the base username is taken, adds a random suffix.
+    Generate a short, unique username from a display name.
+
+    Strategy (tries in order):
+    1. First name only: "ayush"
+    2. First name + first initial of last: "ayusha"
+    3. First name + first 3 chars of last: "ayushagr"
+    4. First name + last name abbreviated: "ayushagra"
+    5. First name + incrementing number: "ayush1", "ayush2", ...
     """
-    base = generate_username_base(display_name)
+    if not display_name:
+        return f"user{generate_random_suffix(4)}"
 
-    # Try the base username first
-    if is_username_available(base):
-        return base
+    # Split into parts
+    parts = display_name.strip().split()
+    first_name = clean_name_part(parts[0]) if parts else ""
+    last_name = clean_name_part(parts[-1]) if len(parts) > 1 else ""
+    middle_parts = [clean_name_part(p) for p in parts[1:-1]] if len(parts) > 2 else []
 
-    # Add random suffix until we find an available one
-    for _ in range(max_attempts):
-        suffix = generate_random_suffix()
-        candidate = f"{base}-{suffix}"
+    if not first_name:
+        return f"user{generate_random_suffix(4)}"
+
+    # Try progressively longer combinations
+    candidates = []
+
+    # 1. First name only
+    candidates.append(first_name)
+
+    if last_name and last_name != first_name:
+        # 2. First name + first initial of last name
+        candidates.append(f"{first_name}{last_name[0]}")
+
+        # 3. First name + first 2-3 chars of last name
+        if len(last_name) >= 2:
+            candidates.append(f"{first_name}{last_name[:2]}")
+        if len(last_name) >= 3:
+            candidates.append(f"{first_name}{last_name[:3]}")
+        if len(last_name) >= 4:
+            candidates.append(f"{first_name}{last_name[:4]}")
+
+        # 4. With middle initial if present
+        if middle_parts:
+            candidates.append(f"{first_name}{middle_parts[0][0]}{last_name[0]}")
+
+    # Try each candidate
+    for candidate in candidates:
+        if len(candidate) >= 3 and is_username_available(candidate):
+            return candidate
+
+    # 5. First name + incrementing number
+    base = first_name if len(first_name) >= 3 else f"{first_name}{last_name[:2] if last_name else ''}"
+    for i in range(1, 100):
+        candidate = f"{base}{i}"
         if is_username_available(candidate):
             return candidate
 
-    # Fallback: use timestamp-based suffix
-    import time
-    return f"{base}-{int(time.time()) % 100000}"
+    # Fallback: add random suffix
+    return f"{base}{generate_random_suffix(3)}"
 
 
 def set_username(profile_id: str, username: str, display_name: str = None) -> dict:
