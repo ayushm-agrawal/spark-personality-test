@@ -14,7 +14,9 @@ import os
 import logging
 import random
 import math
+import hashlib
 import httpx
+from typing import Optional
 from dotenv import load_dotenv
 
 # Configure logging to show debug messages
@@ -199,6 +201,9 @@ def _generate_with_simulated_answer(session_id: str, simulated_answer: str) -> d
 
         traits_assessed = [t for t, c in simulated_trait_counts.items() if c > 0]
 
+        # Get single interest for deep dive mode
+        single_interest = session.get("interest")
+
         # Render prompt with simulated state
         next_question_prompt = render_system_prompt(
             mode=mode if mode != "interest" else "deep_dive",
@@ -209,11 +214,12 @@ def _generate_with_simulated_answer(session_id: str, simulated_answer: str) -> d
             question_type=question_type,
             previous_answers=answer_history,
             trait_scores=trait_scores_detailed,
-            life_contexts=user_interests if mode in ["interest", "deep_dive"] else None,
+            life_contexts=user_interests if mode in ["interest", "deep_dive"] and not single_interest else None,
             current_context=current_context,
             context_scenario_hooks=context_hooks,
             traits_assessed=traits_assessed,
-            inferred_tendencies=tendencies
+            inferred_tendencies=tendencies,
+            single_interest=single_interest
         )
 
         # Generate question (this is the expensive LLM call)
@@ -403,34 +409,330 @@ def fix_question_scores(question: dict) -> dict:
 
 def check_score_confidence(normalized_scores: dict) -> dict:
     """
-    Check if normalized scores have enough variance to be meaningful.
+    Check confidence level of normalized scores and return detailed tier information.
+
+    Three tiers based on score differentiation:
+    - "clear": Strong differentiation, high confidence (70-95%)
+    - "emerging": Moderate differentiation, medium confidence (40-70%)
+    - "unclear": Low differentiation, low confidence (20-40%)
 
     Args:
         normalized_scores: Dictionary of normalized scores (0-100)
 
     Returns:
-        Dictionary with confidence metrics
+        Dictionary with:
+        - tier: "clear", "emerging", or "unclear"
+        - confidence_pct: Percentage confidence value
+        - explanation: User-facing explanation (for emerging/unclear)
+        - ambiguous_traits: List of traits in the 40-60% zone
+        - score_range: Max - min of scores
+        - std_dev: Standard deviation
     """
     if not normalized_scores:
-        return {"low_confidence": True, "reason": "No scores", "variance": 0}
+        return {
+            "tier": "unclear",
+            "confidence_pct": 20,
+            "explanation": "No scores available to analyze.",
+            "ambiguous_traits": [],
+            "score_range": 0,
+            "std_dev": 0
+        }
 
     scores = list(normalized_scores.values())
     mean_score = sum(scores) / len(scores)
     variance = sum((s - mean_score) ** 2 for s in scores) / len(scores)
     std_dev = math.sqrt(variance)
-
-    # Check if all scores are within 15 points of each other
     score_range = max(scores) - min(scores)
 
-    low_confidence = score_range < 15 or std_dev < 10
+    # Find ambiguous traits (those scoring between 40-60%)
+    ambiguous_traits = [
+        trait for trait, score in normalized_scores.items()
+        if 40 <= score <= 60
+    ]
+
+    # Determine tier based on score differentiation
+    if score_range >= 50 and std_dev >= 20:
+        # Clear differentiation - high confidence
+        tier = "clear"
+        # Map to 70-95% range based on how strong the differentiation is
+        confidence_pct = min(95, 70 + (score_range - 50) * 0.5 + (std_dev - 20) * 0.5)
+        explanation = None
+    elif score_range >= 25 or std_dev >= 12:
+        # Moderate differentiation - emerging profile
+        tier = "emerging"
+        # Map to 40-70% range
+        confidence_pct = min(70, max(40, 40 + (score_range - 25) * 0.6 + (std_dev - 12) * 1.0))
+        explanation = "We see a pattern forming but need more signal to be certain. Your results may refine as you take more tests."
+    else:
+        # Low differentiation - unclear
+        tier = "unclear"
+        # Map to 20-40% range
+        confidence_pct = max(20, min(40, 20 + score_range * 0.8))
+        explanation = "Your responses were fairly balanced across traits. This could mean you're adaptable, or we need more questions to find your pattern."
 
     return {
-        "low_confidence": low_confidence,
-        "variance": round(variance, 2),
+        "tier": tier,
+        "confidence_pct": round(confidence_pct, 1),
+        "explanation": explanation,
+        "ambiguous_traits": ambiguous_traits,
+        "score_range": round(score_range, 2),
         "std_dev": round(std_dev, 2),
-        "range": round(score_range, 2),
-        "reason": "Scores too similar - results may not be reliable" if low_confidence else None
+        # Legacy fields for backwards compatibility
+        "low_confidence": tier != "clear",
+        "variance": round(variance, 2),
+        "reason": explanation
     }
+
+
+def get_extension_opportunity(session_id: str) -> dict:
+    """
+    Wrapper to get extension opportunity by session ID.
+    """
+    session_doc = db.collection("sessions").document(session_id)
+    session = session_doc.get().to_dict()
+    if not session:
+        return {"offer_extension": False, "error": "Invalid session"}
+    return check_extension_opportunity(session)
+
+
+def accept_extension(session_id: str) -> dict:
+    """
+    Accept the test extension and add 2 more clarifying questions.
+
+    This function:
+    1. Gets the extension opportunity info
+    2. Updates the session to increase question count by 2
+    3. Stores the focus traits for targeted question generation
+    4. Returns the first extended question
+
+    Args:
+        session_id: The session ID
+
+    Returns:
+        Dictionary with next_question or error
+    """
+    session_doc = db.collection("sessions").document(session_id)
+    session = session_doc.get().to_dict()
+
+    if not session:
+        return {"error": "Invalid session"}
+
+    extension = check_extension_opportunity(session)
+
+    if not extension.get("offer_extension"):
+        return {"error": "Extension not available", "reason": extension.get("reason")}
+
+    # Update session for extension
+    new_question_count = session.get("question_count_target", 10) + 2
+    focus_traits = extension.get("focus_traits", [])
+
+    session_doc.update({
+        "question_count_target": new_question_count,
+        "extension_accepted": True,
+        "extension_focus_traits": focus_traits
+    })
+
+    # Generate the next question (will be a clarifying question)
+    next_question = generate_next_question(session_id)
+
+    return {
+        "extension_accepted": True,
+        "new_question_count": new_question_count,
+        "focus_traits": focus_traits,
+        "next_question": next_question
+    }
+
+
+def check_extension_opportunity(session: dict) -> dict:
+    """
+    Check if the test should offer an extension for more accurate results.
+
+    Extension is offered when:
+    1. Not already at max questions for the mode
+    2. Confidence tier is not "clear"
+    3. There are ambiguous traits or under-sampled traits
+
+    Args:
+        session: The session dictionary
+
+    Returns:
+        Dictionary with:
+        - offer_extension: Boolean
+        - suggested_questions: Number of additional questions (always 2)
+        - focus_traits: List of traits that need more signal
+        - message: User-facing explanation
+    """
+    mode = session.get("mode", "overall")
+    current_count = len(session.get("responses", {}))
+
+    # Max questions per mode
+    max_questions = {
+        "hackathon": 10,
+        "overall": 15,
+        "deep_dive": 15
+    }
+    max_for_mode = max_questions.get(mode, 15)
+
+    # If already at max, don't offer
+    if current_count >= max_for_mode:
+        return {
+            "offer_extension": False,
+            "reason": "Already at maximum questions for this mode"
+        }
+
+    # Calculate current confidence
+    scores = session.get("scores", {})
+    trait_counts = session.get("trait_counts", {})
+
+    if not scores or not trait_counts:
+        return {
+            "offer_extension": False,
+            "reason": "No scores yet"
+        }
+
+    normalized = normalize_scores(scores, trait_counts)
+    confidence = check_score_confidence(normalized)
+
+    # If already clear, don't offer
+    if confidence.get("tier") == "clear":
+        return {
+            "offer_extension": False,
+            "reason": "Confidence already clear"
+        }
+
+    # Find ambiguous traits (40-60%)
+    ambiguous_traits = confidence.get("ambiguous_traits", [])
+
+    # If no ambiguous traits, find least-questioned traits
+    if not ambiguous_traits:
+        # Sort traits by question count, take 2 lowest
+        sorted_traits = sorted(trait_counts.items(), key=lambda x: x[1])
+        focus_traits = [t[0] for t in sorted_traits[:2]]
+    else:
+        # Take up to 2 ambiguous traits
+        focus_traits = ambiguous_traits[:2]
+
+    # Format trait names for display
+    trait_display = " and ".join(focus_traits).replace("_", " ")
+
+    return {
+        "offer_extension": True,
+        "suggested_questions": 2,
+        "focus_traits": focus_traits,
+        "message": f"Want sharper results? 2 more questions would help clarify your {trait_display}.",
+        "current_confidence": confidence.get("tier"),
+        "confidence_pct": confidence.get("confidence_pct")
+    }
+
+
+def detect_suspicious_patterns(session: dict) -> dict:
+    """
+    Detect suspicious answering patterns that may indicate random/invalid responses.
+
+    Checks for:
+    1. Speed flag: Average response time < 2 seconds
+    2. Uniform flag: All answers are the same option (e.g., all "a")
+    3. Pattern flag: Repeating pattern like a,b,c,a,b,c
+    4. Average flag: All trait scores in the 40-60% range
+
+    Args:
+        session: The session dictionary with answer history and scores
+
+    Returns:
+        Dictionary with:
+        - suspicious: True if any high severity flag OR 2+ flags
+        - flags: List of flag objects with type, severity, description
+        - warning: User-facing warning message
+        - suggestion: Suggestion for improvement
+    """
+    flags = []
+    answer_history = session.get("answer_history", [])
+    response_times = session.get("response_times", {})
+
+    # Debug logging
+    logging.info(f"[SUSPICIOUS] Checking patterns - answer_history count: {len(answer_history)}")
+    logging.info(f"[SUSPICIOUS] response_times: {response_times}")
+
+    # Extract just the answer keys (a, b, c) from history
+    answer_keys = [a.get("selected_option", "").lower() for a in answer_history if a.get("selected_option")]
+    logging.info(f"[SUSPICIOUS] answer_keys: {answer_keys}")
+
+    # 1. Speed check: Average response time < 2 seconds
+    if response_times:
+        times = list(response_times.values())
+        logging.info(f"[SUSPICIOUS] Speed check - times: {times}, count: {len(times)}")
+        if len(times) >= 3:
+            avg_time = sum(times) / len(times)
+            logging.info(f"[SUSPICIOUS] Speed check - avg_time: {avg_time:.2f}s (threshold: 2.0s)")
+            if avg_time < 2.0:
+                flags.append({
+                    "type": "speed",
+                    "severity": "medium",
+                    "description": f"Average response time was {avg_time:.1f}s (very fast)",
+                    "avg_response_time": round(avg_time, 2)
+                })
+
+    # 2. Uniform check: All same answer (4+ questions)
+    if len(answer_keys) >= 4:
+        unique_answers = set(answer_keys)
+        logging.info(f"[SUSPICIOUS] Uniform check - unique_answers: {unique_answers}")
+        if len(unique_answers) == 1:
+            flags.append({
+                "type": "uniform",
+                "severity": "high",
+                "description": f"All {len(answer_keys)} answers were '{answer_keys[0]}'"
+            })
+
+    # 3. Pattern check: Repeating pattern like a,b,c,a,b,c (6+ questions)
+    if len(answer_keys) >= 6:
+        # Check for 2-length and 3-length repeating patterns
+        for pattern_len in [2, 3]:
+            pattern = answer_keys[:pattern_len]
+            is_repeating = True
+            for i in range(len(answer_keys)):
+                if answer_keys[i] != pattern[i % pattern_len]:
+                    is_repeating = False
+                    break
+            if is_repeating:
+                flags.append({
+                    "type": "pattern",
+                    "severity": "high",
+                    "description": f"Answers followed repeating pattern: {','.join(pattern)}"
+                })
+                break
+
+    # 4. Average check: All normalized scores in 40-60% range
+    scores = session.get("scores", {})
+    trait_counts = session.get("trait_counts", {})
+    if scores and trait_counts:
+        normalized = normalize_scores(scores, trait_counts)
+        all_average = all(40 <= score <= 60 for score in normalized.values() if score > 0)
+        if all_average and len([s for s in normalized.values() if s > 0]) >= 3:
+            flags.append({
+                "type": "average",
+                "severity": "low",
+                "description": "All trait scores fell in the middle range (40-60%)"
+            })
+
+    # Determine if suspicious
+    high_severity_count = sum(1 for f in flags if f["severity"] == "high")
+    total_flags = len(flags)
+
+    suspicious = high_severity_count >= 1 or total_flags >= 2
+
+    logging.info(f"[SUSPICIOUS] Final result - flags: {[f['type'] for f in flags]}, high_severity: {high_severity_count}, suspicious: {suspicious}")
+
+    result = {
+        "suspicious": suspicious,
+        "flags": flags,
+        "flag_count": total_flags
+    }
+
+    if suspicious:
+        result["warning"] = "Your responses showed some unusual patterns. Results may not fully reflect your personality."
+        result["suggestion"] = "For more accurate results, try taking the test again and spend a moment considering each question."
+
+    return result
 
 
 def cosine_similarity(vec_a: dict, vec_b: dict) -> float:
@@ -606,7 +908,7 @@ def determine_archetype(scores: dict, trait_counts: dict = None) -> dict:
 # SESSION MANAGEMENT FUNCTIONS
 # ============================================================================
 
-def start_test(mode: str = "overall") -> dict:
+def start_test(mode: str = "overall", interest: str = None) -> dict:
     """
     Start a new personality test session.
 
@@ -614,8 +916,10 @@ def start_test(mode: str = "overall") -> dict:
     and handles mode-specific routing (some modes skip interest selection).
 
     Args:
-        mode: Assessment mode - 'hackathon', 'overall', or 'interest'.
+        mode: Assessment mode - 'hackathon', 'overall', or 'deep_dive'.
               Defaults to 'overall'.
+        interest: Optional single interest/context for deep_dive mode.
+                  If provided, skips interest selection and goes directly to questions.
 
     Returns:
         dict: A dictionary containing:
@@ -625,6 +929,7 @@ def start_test(mode: str = "overall") -> dict:
             - ui_flow: Instructions for frontend on what to display next
             - next_question: (Optional) First question if skipping interest selection
             - interest_config: (Optional) Interest selection requirements if needed
+            - interest: (Optional) The interest context for deep_dive mode
     """
     # Validate and get mode configuration
     if mode not in ASSESSMENT_MODES:
@@ -645,6 +950,7 @@ def start_test(mode: str = "overall") -> dict:
         "start_time": time.time(),
         "responses": {},
         "interests": [],
+        "interest": interest,  # Single interest for deep_dive mode (new flow)
         "scores": {trait: 0 for trait in focused_traits},
         "trait_counts": trait_counts,
         "focused_traits": focused_traits,  # Store for later use
@@ -686,6 +992,14 @@ def start_test(mode: str = "overall") -> dict:
             "show_interest_selection": False,
             "proceed_directly_to_questions": True
         }
+        response["next_question"] = generate_next_question(session_id)
+    elif mode == "deep_dive" and interest:
+        # Deep dive with single interest provided - skip to questions
+        response["ui_flow"] = {
+            "show_interest_selection": False,
+            "proceed_directly_to_questions": True
+        }
+        response["interest"] = interest
         response["next_question"] = generate_next_question(session_id)
     elif mode_config.get("allow_optional_interests"):
         # Overall mode - optional life context selection (same as deep_dive)
@@ -1032,6 +1346,9 @@ def generate_next_question(session_id: str) -> dict:
         # Get list of traits already assessed
         traits_assessed = [t for t, c in trait_counts.items() if c > 0]
 
+        # Get single interest for deep dive mode (new flow)
+        single_interest = session.get("interest")  # Freeform interest text
+
         # Render the system prompt using Jinja2 template
         next_question_prompt = render_system_prompt(
             mode=mode if mode != "interest" else "deep_dive",  # Normalize mode name
@@ -1042,14 +1359,15 @@ def generate_next_question(session_id: str) -> dict:
             question_type=question_type,
             previous_answers=answer_history,
             trait_scores=trait_scores_detailed,
-            life_contexts=user_interests if mode in ["interest", "deep_dive"] else None,
+            life_contexts=user_interests if mode in ["interest", "deep_dive"] and not single_interest else None,
             current_context=current_context,
             context_scenario_hooks=context_hooks,
             traits_assessed=traits_assessed,
             inferred_tendencies=tendencies,
             focused_traits=focused_traits,
             questions_per_trait=questions_per_trait,
-            trait_needs=trait_needs
+            trait_needs=trait_needs,
+            single_interest=single_interest
         )
         logging.info("Sending prompt to GPT for question generation.")
         response_gpt = client.chat.completions.create(
@@ -1096,9 +1414,11 @@ def generate_next_question(session_id: str) -> dict:
                 logging.debug("Predicted next answer: %s", predicted_next)
 
             # Store both the question and prediction
+            # Also set last_question_time so response time is measured from when question is shown
             session_doc.update({
                 "current_question": next_question,
-                "predicted_next_answer": predicted_next
+                "predicted_next_answer": predicted_next,
+                "last_question_time": time.time()  # Track when question was displayed
             })
 
             # Include prediction in response for pre-fetching system
@@ -1258,17 +1578,32 @@ Return ONLY the JSON object, no markdown or commentary.
 
         # Build mode-specific insights
         mode_specific = {}
+        single_interest = session.get("interest")  # Single interest for deep_dive
+
         if mode == "hackathon":
             mode_specific = {
                 "hackathon_superpower": raw_archetype.get("hackathon_superpower", ""),
                 "hackathon_pitfall": raw_archetype.get("hackathon_pitfall", ""),
                 "team_value": archetype_data.get("team_value", "")
             }
+        elif mode == "deep_dive" and single_interest:
+            # Single interest deep dive - new flow
+            mode_specific = {
+                "interest": single_interest,
+                "interest_insight": f"In {single_interest}, you show up as {archetype_name}.",
+                "contextualized_tagline": f"At {single_interest}, you're {archetype_name}"
+            }
         elif mode == "interest" and interests:
             mode_specific = {
                 "interests_assessed": interests,
                 "domain_insight": f"Your {archetype_name} traits shine through in {', '.join(interests[:2])}"
             }
+
+        # Get detailed confidence info
+        score_confidence = archetype_result.get("score_confidence", check_score_confidence(normalized_scores))
+
+        # Check for suspicious patterns
+        suspicious_patterns = detect_suspicious_patterns(session)
 
         return {
             "test_complete": True,
@@ -1290,10 +1625,18 @@ Return ONLY the JSON object, no markdown or commentary.
                 "growth_partners": archetype_data.get("growth_partners", [])
             },
             "archetype_confidence": confidence,
+            "confidence": {
+                "tier": score_confidence.get("tier", "emerging"),
+                "confidence_pct": score_confidence.get("confidence_pct", confidence),
+                "explanation": score_confidence.get("explanation"),
+                "ambiguous_traits": score_confidence.get("ambiguous_traits", [])
+            },
             "trait_breakdown": trait_breakdown,
             "all_matches": all_matches,
             "personalized_profile": personalized_profile,
             "mode_specific": mode_specific,
+            "interest": single_interest,  # For deep_dive mode with single interest
+            "suspicious_patterns": suspicious_patterns if suspicious_patterns.get("suspicious") else None,
             # Legacy fields for backwards compatibility
             "suggested_archetype": archetype_name,
             "archetype_description": personalized_profile,
@@ -1370,3 +1713,259 @@ def store_feedback(session_id: str, rating: int, timestamp: float, archetype: st
         "archetype": archetype
     }
     db.collection("feedback").add(feedback_data)
+
+
+# =============================================================================
+# Profile Persistence Functions
+# =============================================================================
+
+def generate_device_fingerprint(headers: dict) -> str:
+    """
+    Generate a device fingerprint from request headers.
+
+    Creates a hash from browser characteristics for device identification.
+    This is a best-effort approach for MVP - not cryptographically secure.
+
+    Args:
+        headers: Dictionary of HTTP headers from the request
+
+    Returns:
+        32-character SHA256 hash of combined signals
+    """
+    signals = [
+        headers.get("User-Agent", ""),
+        headers.get("Accept-Language", ""),
+        headers.get("Sec-CH-UA", ""),
+        headers.get("Sec-CH-UA-Platform", ""),
+    ]
+
+    combined = "|".join(signals)
+    hash_obj = hashlib.sha256(combined.encode())
+    return hash_obj.hexdigest()[:32]
+
+
+def get_or_create_profile(user_id: str = None, device_fingerprint: str = None) -> dict:
+    """
+    Get existing profile or create a new one.
+
+    Resolution order:
+    1. If user_id provided, look for profile with that user_id
+    2. If not found but device_fingerprint provided, look for profile with that fingerprint
+    3. If found by fingerprint and user_id was provided, link them (account linking)
+    4. If no profile found, create new one
+
+    Args:
+        user_id: Firebase auth UID (optional)
+        device_fingerprint: Device fingerprint hash (optional)
+
+    Returns:
+        Dictionary with profile data and profile_id
+    """
+    profiles_ref = db.collection("user_profiles")
+
+    # 1. Try to find by user_id
+    if user_id:
+        query = profiles_ref.where("user_id", "==", user_id).limit(1)
+        docs = list(query.stream())
+        if docs:
+            profile = docs[0].to_dict()
+            profile["profile_id"] = docs[0].id
+            return profile
+
+    # 2. Try to find by device fingerprint
+    if device_fingerprint:
+        query = profiles_ref.where("device_fingerprint", "==", device_fingerprint).limit(1)
+        docs = list(query.stream())
+        if docs:
+            profile = docs[0].to_dict()
+            profile["profile_id"] = docs[0].id
+
+            # 3. Link user_id if provided (account linking)
+            if user_id and not profile.get("user_id"):
+                docs[0].reference.update({
+                    "user_id": user_id,
+                    "updated_at": time.time()
+                })
+                profile["user_id"] = user_id
+
+            return profile
+
+    # 4. Create new profile
+    new_profile = {
+        "user_id": user_id,
+        "device_fingerprint": device_fingerprint,
+        "created_at": time.time(),
+        "updated_at": time.time(),
+        "cumulative_scores": {
+            "Openness": {"total_points": 0, "total_questions": 0},
+            "Conscientiousness": {"total_points": 0, "total_questions": 0},
+            "Extraversion": {"total_points": 0, "total_questions": 0},
+            "Agreeableness": {"total_points": 0, "total_questions": 0},
+            "Emotional_Stability": {"total_points": 0, "total_questions": 0}
+        },
+        "test_history": [],
+        "current_archetype": None,
+        "overall_confidence": 0,
+        "deep_dive_profiles": {}
+    }
+
+    doc_ref = profiles_ref.add(new_profile)
+    new_profile["profile_id"] = doc_ref[1].id
+
+    return new_profile
+
+
+def update_profile_after_test(profile_id: str, session: dict, result: dict) -> dict:
+    """
+    Update user profile after completing a test.
+
+    Increments cumulative scores, adds test to history, updates archetype.
+
+    Args:
+        profile_id: Firestore profile document ID
+        session: The session dictionary
+        result: The finalized test result
+
+    Returns:
+        Updated profile dictionary
+    """
+    profile_ref = db.collection("user_profiles").document(profile_id)
+    profile = profile_ref.get().to_dict()
+
+    if not profile:
+        return {"error": "Profile not found"}
+
+    mode = session.get("mode", "overall")
+    scores = session.get("scores", {})
+    trait_counts = session.get("trait_counts", {})
+    interest = session.get("interest")  # For deep dive mode
+
+    # Update cumulative scores
+    cumulative = profile.get("cumulative_scores", {})
+    for trait, score in scores.items():
+        if trait not in cumulative:
+            cumulative[trait] = {"total_points": 0, "total_questions": 0}
+        cumulative[trait]["total_points"] += score
+        cumulative[trait]["total_questions"] += trait_counts.get(trait, 0)
+
+    # Create test record
+    test_record = {
+        "session_id": session.get("session_id"),
+        "mode": mode,
+        "date": time.time(),
+        "archetype": result.get("archetype", {}).get("name"),
+        "confidence_tier": result.get("confidence", {}).get("tier"),
+        "confidence_pct": result.get("confidence", {}).get("confidence_pct"),
+        "normalized_scores": result.get("normalized_scores", {})
+    }
+
+    if mode == "deep_dive" and interest:
+        test_record["interest"] = interest
+
+    # Update test history (keep last 20)
+    test_history = profile.get("test_history", [])
+    test_history.append(test_record)
+    if len(test_history) > 20:
+        test_history = test_history[-20:]
+
+    # Update current archetype and confidence
+    archetype_name = result.get("archetype", {}).get("name")
+    confidence_pct = result.get("confidence", {}).get("confidence_pct", 0)
+
+    # Update deep dive profiles if applicable
+    deep_dive_profiles = profile.get("deep_dive_profiles", {})
+    if mode == "deep_dive" and interest:
+        deep_dive_profiles[interest] = {
+            "archetype": archetype_name,
+            "scores": result.get("normalized_scores", {}),
+            "confidence": confidence_pct,
+            "date": time.time()
+        }
+
+    # Write updates
+    profile_ref.update({
+        "cumulative_scores": cumulative,
+        "test_history": test_history,
+        "current_archetype": archetype_name,
+        "overall_confidence": confidence_pct,
+        "deep_dive_profiles": deep_dive_profiles,
+        "updated_at": time.time()
+    })
+
+    profile["cumulative_scores"] = cumulative
+    profile["test_history"] = test_history
+    profile["current_archetype"] = archetype_name
+    profile["overall_confidence"] = confidence_pct
+    profile["deep_dive_profiles"] = deep_dive_profiles
+
+    return profile
+
+
+def get_profile_context_for_llm(profile: dict) -> Optional[dict]:
+    """
+    Build context from profile history to help LLM generate better questions.
+
+    Args:
+        profile: User profile dictionary
+
+    Returns:
+        Context object for LLM, or None if no useful history
+    """
+    if not profile:
+        return None
+
+    test_history = profile.get("test_history", [])
+    if not test_history:
+        return None
+
+    cumulative = profile.get("cumulative_scores", {})
+
+    # Find under-sampled traits (total_questions < 4)
+    weak_traits = []
+    for trait, data in cumulative.items():
+        if data.get("total_questions", 0) < 4:
+            weak_traits.append(trait)
+
+    # Calculate cumulative normalized scores
+    cumulative_scores = {}
+    for trait, data in cumulative.items():
+        total_q = data.get("total_questions", 0)
+        if total_q > 0:
+            max_possible = total_q * 2  # Max 2 points per question
+            normalized = (data.get("total_points", 0) / max_possible) * 100
+            cumulative_scores[trait] = round(normalized, 1)
+
+    context = {
+        "tests_completed": len(test_history),
+        "current_archetype": profile.get("current_archetype"),
+        "overall_confidence": profile.get("overall_confidence"),
+        "weak_traits": weak_traits,
+        "cumulative_scores": cumulative_scores,
+        "llm_instruction": None
+    }
+
+    # Build LLM instruction
+    if weak_traits or len(test_history) > 0:
+        instruction_parts = []
+
+        if profile.get("current_archetype"):
+            instruction_parts.append(
+                f"User's current archetype is {profile['current_archetype']} "
+                f"with {profile.get('overall_confidence', 0):.0f}% confidence."
+            )
+
+        if weak_traits:
+            instruction_parts.append(
+                f"These traits need more signal: {', '.join(weak_traits)}. "
+                "Prioritize questions that assess these traits."
+            )
+
+        if len(test_history) > 1:
+            instruction_parts.append(
+                f"User has taken {len(test_history)} tests. "
+                "Avoid repeating similar scenarios they've likely seen before."
+            )
+
+        context["llm_instruction"] = " ".join(instruction_parts)
+
+    return context if context.get("llm_instruction") else None
