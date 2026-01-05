@@ -139,3 +139,44 @@ export async function getProfileView(profileId) {
   if (!response.ok) throw new Error('Failed to get profile view');
   return response.json();
 }
+
+// Username API functions
+export async function checkUsername(username) {
+  const response = await fetch(`${API_BASE}/check-username/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username }),
+  });
+  if (!response.ok) throw new Error('Failed to check username');
+  return response.json();
+}
+
+export async function setUsername(profileId, username, displayName = null) {
+  const response = await fetch(`${API_BASE}/set-username/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      profile_id: profileId,
+      username: username,
+      display_name: displayName
+    }),
+  });
+  if (!response.ok) throw new Error('Failed to set username');
+  return response.json();
+}
+
+export async function generateUsername(displayName) {
+  const response = await fetch(`${API_BASE}/generate-username/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+  if (!response.ok) throw new Error('Failed to generate username');
+  return response.json();
+}
+
+export async function getPublicProfile(username) {
+  const response = await fetch(`${API_BASE}/u/${username}`);
+  if (!response.ok) throw new Error('Failed to get public profile');
+  return response.json();
+}

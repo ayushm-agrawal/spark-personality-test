@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import * as api from '../api';
 
+// Base URL for shareable profile links
+const SHARE_BASE_URL = 'https://personality.ception.one/u/';
+
 // Stability badge component
 function StabilityBadge({ stability, size = 'md' }) {
   const config = {
@@ -112,6 +115,9 @@ export default function ProfilePage({ onClose, onStartTest }) {
   const [profile, setProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [username, setUsername] = useState(null);
+  const [isSettingUsername, setIsSettingUsername] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -126,7 +132,24 @@ export default function ProfilePage({ onClose, onStartTest }) {
         if (profileData?.profile_id) {
           // Then get the full profile view
           const fullProfile = await api.getProfileView(profileData.profile_id);
-          setProfile(fullProfile);
+          setProfile({ ...fullProfile, profile_id: profileData.profile_id });
+          setUsername(fullProfile.username);
+
+          // Auto-generate username if not set
+          if (!fullProfile.username && user.displayName) {
+            setIsSettingUsername(true);
+            try {
+              const { username: generatedUsername } = await api.generateUsername(user.displayName);
+              const result = await api.setUsername(profileData.profile_id, generatedUsername, user.displayName);
+              if (result.success) {
+                setUsername(result.username);
+              }
+            } catch (err) {
+              console.error('Failed to generate username:', err);
+            } finally {
+              setIsSettingUsername(false);
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to load profile:', err);
@@ -138,6 +161,19 @@ export default function ProfilePage({ onClose, onStartTest }) {
 
     loadProfile();
   }, [user]);
+
+  const handleCopyLink = async () => {
+    if (!username) return;
+
+    const profileUrl = `${SHARE_BASE_URL}${username}`;
+    try {
+      await navigator.clipboard.writeText(profileUrl);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy link:', err);
+    }
+  };
 
   const hasAnyData = profile && (
     Object.keys(profile.mode_profiles || {}).length > 0 ||
@@ -210,10 +246,45 @@ export default function ProfilePage({ onClose, onStartTest }) {
                 </div>
               )}
               <h2 className="text-xl font-bold text-white">{user?.displayName || 'User'}</h2>
+
+              {/* Username display */}
+              {username && (
+                <p className="text-sm text-violet-400 mt-1">@{username}</p>
+              )}
+              {isSettingUsername && (
+                <p className="text-sm text-neutral-500 mt-1">Setting up your username...</p>
+              )}
+
               {profile?.member_since && (
                 <p className="text-sm text-neutral-500 mt-1">
                   Member since {new Date(profile.member_since * 1000).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                 </p>
+              )}
+
+              {/* Share profile button */}
+              {username && (
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleCopyLink}
+                  className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-sm transition-colors"
+                >
+                  {copiedLink ? (
+                    <>
+                      <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span className="text-green-400">Link Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                      </svg>
+                      <span>Share Profile</span>
+                    </>
+                  )}
+                </motion.button>
               )}
             </div>
 
