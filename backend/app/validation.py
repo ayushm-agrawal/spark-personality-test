@@ -268,14 +268,19 @@ def sanitize_string(value: str, max_length: int = 500) -> str:
 # Patterns that indicate prompt-injection or XSS attempts in LLM-generated
 # content. The model should never produce HTML/JS, so the presence of any of
 # these is treated as untrusted and stripped from the rendered output.
+# HTML permits attributes on end tags (e.g. </script foo=bar>), so each end-tag
+# pattern must tolerate whitespace + arbitrary content between the name and `>`.
+# Otherwise a crafted payload like </script\n bar> slips through while still
+# being accepted by the browser as a valid close tag.
 _LLM_UNSAFE_PATTERNS = [
-    re.compile(r"<\s*script\b[^>]*>.*?<\s*/\s*script\s*>", re.IGNORECASE | re.DOTALL),
+    re.compile(r"<\s*script\b[^>]*>.*?<\s*/\s*script\b[^>]*>", re.IGNORECASE | re.DOTALL),
     re.compile(r"<\s*script\b[^>]*/?\s*>", re.IGNORECASE),
-    re.compile(r"<\s*iframe\b[^>]*>.*?<\s*/\s*iframe\s*>", re.IGNORECASE | re.DOTALL),
+    re.compile(r"<\s*iframe\b[^>]*>.*?<\s*/\s*iframe\b[^>]*>", re.IGNORECASE | re.DOTALL),
     re.compile(r"<\s*iframe\b[^>]*/?\s*>", re.IGNORECASE),
-    re.compile(r"<\s*object\b[^>]*>.*?<\s*/\s*object\s*>", re.IGNORECASE | re.DOTALL),
+    re.compile(r"<\s*object\b[^>]*>.*?<\s*/\s*object\b[^>]*>", re.IGNORECASE | re.DOTALL),
     re.compile(r"<\s*embed\b[^>]*/?\s*>", re.IGNORECASE),
-    re.compile(r"\son[a-z]+\s*=\s*(['\"]).*?\1", re.IGNORECASE | re.DOTALL),  # onclick=..., onload=...
+    # Inline event handlers — match both quoted (onclick="x") and unquoted (onclick=x) forms.
+    re.compile(r"\son[a-z]+\s*=\s*(?:(['\"]).*?\1|[^\s>]+)", re.IGNORECASE | re.DOTALL),
     re.compile(r"javascript\s*:", re.IGNORECASE),
     re.compile(r"data\s*:\s*text/html", re.IGNORECASE),
     re.compile(r"vbscript\s*:", re.IGNORECASE),
