@@ -37,11 +37,15 @@ from prefetch import init_prefetcher, get_prefetcher
 load_dotenv()
 
 # Load Azure OpenAI credentials from environment variables
-AZURE_OPENAI_ENDPOINT = os.getenv(
-    "AZURE_OPENAI_ENDPOINT", "https://ception-ai-service688670829041.cognitiveservices.azure.com")
-AZURE_OPENAI_API_KEY = os.getenv(
-    "AZURE_OPENAI_API_KEY", "***REDACTED-AZURE-OPENAI-KEY***")
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_MODEL_NAME = os.getenv("AZURE_OPENAI_MODEL_NAME", "gpt-5.2-chat")
+
+if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_API_KEY:
+    raise RuntimeError(
+        "AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set "
+        "(see backend/.env.example)."
+    )
 
 # Initialize httpx client with connection pooling for better performance
 http_client = httpx.Client(
