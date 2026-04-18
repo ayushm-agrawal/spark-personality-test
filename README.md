@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="frontend-react/public/og-image.png" alt="SPARK — Speculative Personality Assessment with Reactive Kernel" width="720" />
+</p>
+
 # SPARK
 
 **Speculative Personality Assessment with Reactive Kernel**
@@ -150,6 +154,23 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 
 ---
 
-## License
+## Contributing
 
-MIT.
+Issues and pull requests are welcome. Before opening a PR:
+
+1. **Open an issue first** for anything non-trivial (new feature, significant refactor, new assessment mode, new archetype). Small fixes can skip straight to a PR.
+2. **Branch from `main`.** Use a descriptive branch name, e.g. `fix/prefetch-cache-ttl` or `feat/trait-coverage-v2`.
+3. **Keep the change scoped.** One concern per PR. Resist the urge to bundle drive-by cleanups.
+4. **Run locally** and confirm both halves boot cleanly:
+   - Backend: `cd backend/app && uvicorn main:app --reload --port 8000`
+   - Frontend: `cd frontend-react && npm run dev`
+5. **Don't commit secrets.** `.env` is gitignored; copy `backend/.env.example` and fill in your own values.
+6. **Write a clear commit message.** Describe the *why*, not just the *what*. Reference the issue number.
+
+For larger design changes (prompt architecture, scoring pipeline, prefetch strategy), please sketch the approach in the issue before writing code so we can align.
+
+## Attribution
+
+© 2026 Ayush Manish Agrawal. All rights reserved.
+
+If you reference, adapt, or build on top of this work — in a blog post, product, research paper, or anywhere else — please credit the author and link back to this repository.
