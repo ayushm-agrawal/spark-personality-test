@@ -3,14 +3,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from api import router, limiter
 
 app = FastAPI(title="Personality Test API")
 
-# Attach the shared rate limiter and its default exception handler
+# Attach the shared rate limiter, its default exception handler, and the
+# enforcement middleware (belt-and-suspenders: the decorator alone can be
+# flaky for GET routes with path parameters on some versions).
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 
 def _parse_origins(raw: str | None) -> list[str]:
