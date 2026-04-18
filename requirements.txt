@@ -7,7 +7,7 @@ azure-core==1.32.0
 blinker==1.9.0
 CacheControl==0.14.2
 cachetools==5.5.2
-certifi==2025.1.31
+certifi==2026.2.25
 cffi==1.17.1
 charset-normalizer==3.4.1
 click==8.1.8
