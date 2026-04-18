@@ -19,8 +19,10 @@ import httpx
 from typing import Optional
 from dotenv import load_dotenv
 
-# Configure logging to show debug messages
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configure logging. Level is controlled by LOG_LEVEL env var (default INFO).
+_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, _log_level, logging.INFO),
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 from openai import AzureOpenAI
 from fastapi import HTTPException
 from firebase import db
@@ -57,12 +59,20 @@ http_client = httpx.Client(
     timeout=httpx.Timeout(60.0, connect=10.0)  # 60s total, 10s connect timeout
 )
 
-# Initialize Azure OpenAI Client with connection pooling
+# Retry and timeout policy for Azure OpenAI calls.
+# The SDK retries transient failures (connection errors, 408/409/429/5xx) with
+# exponential backoff up to OPENAI_MAX_RETRIES attempts, each capped by OPENAI_TIMEOUT_SECONDS.
+OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "3"))
+OPENAI_TIMEOUT_SECONDS = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
+
+# Initialize Azure OpenAI Client with connection pooling and retry policy
 client = AzureOpenAI(
     api_key=AZURE_OPENAI_API_KEY,
     api_version="2024-02-01",
     azure_endpoint=AZURE_OPENAI_ENDPOINT,
     http_client=http_client,
+    max_retries=OPENAI_MAX_RETRIES,
+    timeout=OPENAI_TIMEOUT_SECONDS,
 )
 
 # Load the system prompt from a local markdown file

@@ -148,8 +148,7 @@ The Vite dev server proxies `/api` to `http://localhost:8000`.
 │       ├── badge_service.py     # Badge engine
 │       ├── firebase.py          # Firestore client
 │       └── system_prompt.md     # Base system prompt
-├── frontend-react/              # React + Vite client
-└── traits.json                  # Trait taxonomy
+└── frontend-react/              # React + Vite client
 ```
 
 ---
