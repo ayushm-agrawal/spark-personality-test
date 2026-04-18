@@ -394,11 +394,16 @@ async def select_interests_api(selection: InterestSelection, background_tasks: B
 
 
 @router.post("/submit-response/")
-async def submit(response: UserResponse, background_tasks: BackgroundTasks):
+@limiter.limit("30/minute")
+async def submit(request: Request, response: UserResponse, background_tasks: BackgroundTasks):
     """
     Submits a user's answer for a given question and generates the next question.
 
+    Rate-limited to 30 requests per minute per client. Each call runs an LLM
+    generation, so this cap controls Azure OpenAI cost exposure from any single IP.
+
     Args:
+        request: FastAPI Request (required by the rate limiter).
         response (UserResponse): The user's response containing session ID, question ID, and answer.
         background_tasks: FastAPI BackgroundTasks for async prefetching.
 

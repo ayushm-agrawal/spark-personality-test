@@ -34,6 +34,7 @@ from modes import ASSESSMENT_MODES, get_mode_config, get_mode_prompt_context, sh
 from interests import get_interest_categories, get_life_areas, build_interest_prompt, validate_interests
 from prompts import render_system_prompt, infer_tendencies, LIFE_CONTEXT_CATEGORIES, get_life_context_details
 from prefetch import init_prefetcher, get_prefetcher
+from validation import scrub_llm_question
 
 # Load environment variables from .env file
 load_dotenv()
@@ -263,13 +264,16 @@ def _generate_with_simulated_answer(session_id: str, simulated_answer: str) -> d
             next_question["_prefetched"] = True
             next_question["_prefetched_for_answer"] = simulated_answer
 
+            # Strip any HTML/JS that slipped through prompt injection attempts.
+            scrub_llm_question(next_question)
+
             return next_question
         except json.JSONDecodeError:
             return {"error": "Failed to parse AI response JSON"}
 
     except Exception as e:
         logging.error(f"Prefetch generation error: {e}")
-        return {"error": str(e)}
+        return {"error": "Prefetch generation failed"}
 
 
 # Initialize the prefetcher (lazy initialization)
@@ -1421,6 +1425,9 @@ def generate_next_question(session_id: str) -> dict:
                 if next_question.get("trait") != target_trait:
                     logging.warning(f"Forcing trait from {next_question.get('trait')} to {target_trait}")
                     next_question["trait"] = target_trait
+
+            # Strip any HTML/JS that slipped through prompt injection attempts.
+            scrub_llm_question(next_question)
 
             # Extract predicted_next_answer for pre-fetching (Phase 4)
             predicted_next = response_content.get("predicted_next_answer", {})

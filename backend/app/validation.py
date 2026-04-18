@@ -263,3 +263,68 @@ def sanitize_string(value: str, max_length: int = 500) -> str:
         value = value[:max_length]
 
     return value
+
+
+# Patterns that indicate prompt-injection or XSS attempts in LLM-generated
+# content. The model should never produce HTML/JS, so the presence of any of
+# these is treated as untrusted and stripped from the rendered output.
+# HTML permits attributes on end tags (e.g. </script foo=bar>), so each end-tag
+# pattern must tolerate whitespace + arbitrary content between the name and `>`.
+# Otherwise a crafted payload like </script\n bar> slips through while still
+# being accepted by the browser as a valid close tag.
+_LLM_UNSAFE_PATTERNS = [
+    re.compile(r"<\s*script\b[^>]*>.*?<\s*/\s*script\b[^>]*>", re.IGNORECASE | re.DOTALL),
+    re.compile(r"<\s*script\b[^>]*/?\s*>", re.IGNORECASE),
+    re.compile(r"<\s*iframe\b[^>]*>.*?<\s*/\s*iframe\b[^>]*>", re.IGNORECASE | re.DOTALL),
+    re.compile(r"<\s*iframe\b[^>]*/?\s*>", re.IGNORECASE),
+    re.compile(r"<\s*object\b[^>]*>.*?<\s*/\s*object\b[^>]*>", re.IGNORECASE | re.DOTALL),
+    re.compile(r"<\s*embed\b[^>]*/?\s*>", re.IGNORECASE),
+    # Inline event handlers — match both quoted (onclick="x") and unquoted (onclick=x) forms.
+    re.compile(r"\son[a-z]+\s*=\s*(?:(['\"]).*?\1|[^\s>]+)", re.IGNORECASE | re.DOTALL),
+    re.compile(r"javascript\s*:", re.IGNORECASE),
+    re.compile(r"data\s*:\s*text/html", re.IGNORECASE),
+    re.compile(r"vbscript\s*:", re.IGNORECASE),
+]
+
+
+def scrub_llm_text(value):
+    """
+    Strip HTML/JS-injection patterns from an LLM-generated string.
+
+    The model is prompted to return plain text; any script tags, inline event
+    handlers, or javascript: URLs that slip through are treated as a prompt
+    injection attempt and removed before the text is returned to clients.
+    Non-strings pass through unchanged.
+    """
+    if not isinstance(value, str):
+        return value
+    cleaned = value
+    for pat in _LLM_UNSAFE_PATTERNS:
+        cleaned = pat.sub("", cleaned)
+    return cleaned
+
+
+def scrub_llm_question(question: dict) -> dict:
+    """
+    Recursively scrub every string field of an LLM-generated question dict.
+
+    Applies scrub_llm_text to the question text, each option's text/label,
+    and any nested "predicted_next_answer"/metadata strings. Mutates and
+    returns the same dict for convenience.
+    """
+    if not isinstance(question, dict):
+        return question
+
+    for key, value in list(question.items()):
+        if isinstance(value, str):
+            question[key] = scrub_llm_text(value)
+        elif isinstance(value, dict):
+            scrub_llm_question(value)
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                if isinstance(item, str):
+                    value[i] = scrub_llm_text(item)
+                elif isinstance(item, dict):
+                    scrub_llm_question(item)
+
+    return question
