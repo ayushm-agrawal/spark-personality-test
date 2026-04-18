@@ -1,0 +1,32 @@
+version: 2
+updates:
+  # Keep pinned GitHub Actions SHAs fresh. All actions batched into one PR
+  # per week so this doesn't flood the queue.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Backend Python deps. Two manifests (root and backend/app/) — Dependabot
+  # needs one entry per manifest path.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "pip"
+    directory: "/backend/app"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Frontend npm deps.
+  - package-ecosystem: "npm"
+    directory: "/frontend-react"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
