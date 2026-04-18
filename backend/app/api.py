@@ -8,8 +8,12 @@ Supports three assessment modes: hackathon, overall, and interest.
 
 import asyncio
 import logging
+import uuid
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from auth import verify_id_token, verify_profile_owner
 from services import (
     start_test, submit_response, continue_test, get_results,
     select_interests, store_feedback, _init_prefetcher_if_needed,
@@ -35,6 +39,16 @@ from interests import get_interest_categories, get_life_areas
 from prompts import get_all_life_contexts, LIFE_CONTEXT_CATEGORIES
 
 router = APIRouter()
+
+# Shared rate limiter (bound to the FastAPI app in main.py)
+limiter = Limiter(key_func=get_remote_address)
+
+
+def _safe_error(message: str, exc: Exception) -> dict:
+    """Return a generic error payload; log the real cause with a correlation id."""
+    correlation_id = uuid.uuid4().hex[:12]
+    api_logger.error(f"[API][{correlation_id}] {message}: {exc}")
+    return {"success": False, "error": message, "correlation_id": correlation_id}
 
 # ============================================================================
 # ARCHETYPE INSIGHTS CACHE
@@ -585,20 +599,20 @@ class UpdateProfileRequest(BaseModel):
 
 
 @router.post("/update-profile/")
-async def update_profile(request: UpdateProfileRequest):
+async def update_profile(request: UpdateProfileRequest, uid: str = Depends(verify_id_token)):
     """
     Update user profile after completing a test (Phase 2.5 weighted approach).
 
-    This should be called after finalize_test to update the user's
-    mode-specific profiles with weighted scores. Tests with suspicious
-    patterns are down-weighted or excluded.
+    Requires a valid Firebase ID token whose uid matches the profile owner.
 
     Args:
         request (UpdateProfileRequest): Contains profile_id and session_id.
+        uid: Authenticated user id (from verified ID token).
 
     Returns:
         dict: Updated profile data including holistic archetype info.
     """
+    verify_profile_owner(request.profile_id, uid)
     from firebase import db
 
     # Get session data
@@ -748,19 +762,19 @@ class SetUsernameRequest(BaseModel):
 
 
 @router.post("/check-username/")
-async def check_username(request: CheckUsernameRequest):
+@limiter.limit("20/minute")
+async def check_username(request: Request, body: CheckUsernameRequest):
     """
     Check if a username is available.
 
-    Args:
-        request: CheckUsernameRequest with username to check
+    Rate-limited to 20 requests per minute per client to prevent enumeration.
 
     Returns:
         dict: {"available": bool, "username": str}
     """
     from services import is_username_available
 
-    username = request.username.lower().strip()
+    username = body.username.lower().strip()
     available = is_username_available(username)
 
     return {
@@ -770,7 +784,7 @@ async def check_username(request: CheckUsernameRequest):
 
 
 @router.post("/set-username/")
-async def set_username_endpoint(request: SetUsernameRequest):
+async def set_username_endpoint(request: SetUsernameRequest, uid: str = Depends(verify_id_token)):
     """
     Set or update username for a profile.
 
@@ -781,6 +795,8 @@ async def set_username_endpoint(request: SetUsernameRequest):
         dict: {"success": bool, "username": str} or {"success": false, "error": str}
     """
     from services import set_username
+
+    verify_profile_owner(request.profile_id, uid)
 
     result = set_username(
         profile_id=request.profile_id,
@@ -811,12 +827,12 @@ async def generate_username_endpoint(request: dict):
 
 
 @router.get("/u/{username}")
-async def get_public_profile(username: str):
+@limiter.limit("30/minute")
+async def get_public_profile(request: Request, username: str):
     """
     Get a public profile by username.
 
-    Args:
-        username: The username to look up
+    Rate-limited to 30 requests per minute per client to prevent enumeration.
 
     Returns:
         dict: Public profile data or {"error": "Profile not found"}
@@ -844,29 +860,20 @@ class TrackInsightRequest(BaseModel):
 
 
 @router.post("/track-insight-view/")
-async def track_insight_view_endpoint(request: TrackInsightRequest):
+async def track_insight_view_endpoint(request: TrackInsightRequest, uid: str = Depends(verify_id_token)):
     """
     Track when a user views an insight section.
 
-    This endpoint is called when a user reads insight sections like
-    "blind_spots", "strengths", "tips", etc. It tracks engagement
-    and checks for insight-related badges.
+    Requires a valid Firebase ID token whose uid matches the profile owner.
 
     Args:
         request: TrackInsightRequest with profile_id, archetype, section_name, time_spent_seconds
+        uid: Authenticated user id (from verified ID token).
 
     Returns:
         dict: {"success": bool, "newly_awarded_badges": list}
     """
-    from firebase import db
-
-    # Get current profile
-    profile_doc = db.collection("user_profiles").document(request.profile_id)
-    profile = profile_doc.get().to_dict()
-
-    if not profile:
-        return {"success": False, "error": "Profile not found"}
-
+    profile = verify_profile_owner(request.profile_id, uid)
     try:
         # Track the insight view and check for badges
         updated_profile, newly_earned = track_insight_view(
@@ -884,8 +891,7 @@ async def track_insight_view_endpoint(request: TrackInsightRequest):
         }
 
     except Exception as e:
-        api_logger.error(f"[API] Error tracking insight view: {e}")
-        return {"success": False, "error": str(e)}
+        return _safe_error("Error tracking insight view", e)
 
 
 class TrackAppOpenRequest(BaseModel):
@@ -894,27 +900,21 @@ class TrackAppOpenRequest(BaseModel):
 
 
 @router.post("/track-app-open/")
-async def track_app_open_endpoint(request: TrackAppOpenRequest):
+async def track_app_open_endpoint(request: TrackAppOpenRequest, uid: str = Depends(verify_id_token)):
     """
     Track when a user opens the app/profile page.
 
+    Requires a valid Firebase ID token whose uid matches the profile owner.
     Updates weekly visit tracking and checks for weekly_wanderer badge.
 
     Args:
         request: TrackAppOpenRequest with profile_id
+        uid: Authenticated user id (from verified ID token).
 
     Returns:
         dict: {"success": bool, "newly_awarded_badges": list}
     """
-    from firebase import db
-
-    # Get current profile
-    profile_doc = db.collection("user_profiles").document(request.profile_id)
-    profile = profile_doc.get().to_dict()
-
-    if not profile:
-        return {"success": False, "error": "Profile not found"}
-
+    profile = verify_profile_owner(request.profile_id, uid)
     try:
         # Track app open and check for badges
         updated_profile, newly_earned = track_app_open(
@@ -929,8 +929,7 @@ async def track_app_open_endpoint(request: TrackAppOpenRequest):
         }
 
     except Exception as e:
-        api_logger.error(f"[API] Error tracking app open: {e}")
-        return {"success": False, "error": str(e)}
+        return _safe_error("Error tracking app open", e)
 
 
 @router.get("/badges/{profile_id}")
@@ -1004,7 +1003,7 @@ class SetInsightModeRequest(BaseModel):
 
 
 @router.post("/set-insight-mode/")
-async def set_insight_mode(request: SetInsightModeRequest):
+async def set_insight_mode(request: SetInsightModeRequest, uid: str = Depends(verify_id_token)):
     """
     Set user's preferred insight display mode.
 
@@ -1020,6 +1019,8 @@ async def set_insight_mode(request: SetInsightModeRequest):
     if request.mode not in ["concise", "deep"]:
         return {"success": False, "error": "Mode must be 'concise' or 'deep'"}
 
+    verify_profile_owner(request.profile_id, uid)
+
     try:
         profile_doc = db.collection("user_profiles").document(request.profile_id)
         profile_doc.update({
@@ -1030,8 +1031,7 @@ async def set_insight_mode(request: SetInsightModeRequest):
         return {"success": True, "mode": request.mode}
 
     except Exception as e:
-        api_logger.error(f"[API] Error setting insight mode: {e}")
-        return {"success": False, "error": str(e)}
+        return _safe_error("Error setting insight mode", e)
 
 
 @router.get("/user-preferences/{profile_id}")

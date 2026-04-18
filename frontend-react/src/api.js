@@ -1,6 +1,27 @@
 // Use environment variable for API URL, fallback to /api for proxy setup
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
+import { auth } from './firebase';
+
+// Fetch wrapper that attaches the current user's Firebase ID token.
+// Throws if there is no signed-in user — call sites that may be anonymous
+// should check auth.currentUser first and skip the call.
+async function authFetch(url, options = {}) {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('Not signed in');
+  }
+  const token = await user.getIdToken();
+  const headers = {
+    ...(options.headers || {}),
+    Authorization: `Bearer ${token}`,
+  };
+  if (options.body && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return fetch(url, { ...options, headers });
+}
+
 export async function getAssessmentModes() {
   const response = await fetch(`${API_BASE}/assessment-modes/`);
   if (!response.ok) throw new Error('Failed to fetch assessment modes');
@@ -122,9 +143,8 @@ export async function getOrCreateProfile(userId = null, deviceFingerprint = null
 }
 
 export async function updateProfile(profileId, sessionId) {
-  const response = await fetch(`${API_BASE}/update-profile/`, {
+  const response = await authFetch(`${API_BASE}/update-profile/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       profile_id: profileId,
       session_id: sessionId
@@ -152,9 +172,8 @@ export async function checkUsername(username) {
 }
 
 export async function setUsername(profileId, username, displayName = null) {
-  const response = await fetch(`${API_BASE}/set-username/`, {
+  const response = await authFetch(`${API_BASE}/set-username/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       profile_id: profileId,
       username: username,
@@ -202,9 +221,9 @@ export async function getBadges(profileId) {
 }
 
 export async function trackInsightView(profileId, archetype, sectionName, timeSpentSeconds = 0) {
-  const response = await fetch(`${API_BASE}/track-insight-view/`, {
+  if (!auth.currentUser) return { success: false, error: 'Not signed in' };
+  const response = await authFetch(`${API_BASE}/track-insight-view/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       profile_id: profileId,
       archetype,
@@ -217,9 +236,9 @@ export async function trackInsightView(profileId, archetype, sectionName, timeSp
 }
 
 export async function trackAppOpen(profileId) {
-  const response = await fetch(`${API_BASE}/track-app-open/`, {
+  if (!auth.currentUser) return { success: false, error: 'Not signed in' };
+  const response = await authFetch(`${API_BASE}/track-app-open/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profile_id: profileId }),
   });
   if (!response.ok) throw new Error('Failed to track app open');
@@ -228,9 +247,8 @@ export async function trackAppOpen(profileId) {
 
 // User Preferences API functions
 export async function setInsightMode(profileId, mode) {
-  const response = await fetch(`${API_BASE}/set-insight-mode/`, {
+  const response = await authFetch(`${API_BASE}/set-insight-mode/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profile_id: profileId, mode }),
   });
   if (!response.ok) throw new Error('Failed to set insight mode');
