@@ -43,6 +43,8 @@ load_dotenv()
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 AZURE_OPENAI_MODEL_NAME = os.getenv("AZURE_OPENAI_MODEL_NAME", "gpt-5.2-chat")
+# The deployed model decides which efforts it accepts; newer deployments reject "low".
+AZURE_OPENAI_REASONING_EFFORT = os.getenv("AZURE_OPENAI_REASONING_EFFORT", "medium")
 
 if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_API_KEY:
     raise RuntimeError(
@@ -245,7 +247,7 @@ def _generate_with_simulated_answer(session_id: str, simulated_answer: str) -> d
             ],
             max_completion_tokens=2000,
             model=AZURE_OPENAI_MODEL_NAME,
-            reasoning_effort="low"
+            reasoning_effort=AZURE_OPENAI_REASONING_EFFORT
         )
 
         raw_content = response_gpt.choices[0].message.content
@@ -1154,7 +1156,7 @@ def submit_response(user_response: UserResponse):
                     ],
                     max_completion_tokens=1000,  # Increased for reasoning models
                     model=AZURE_OPENAI_MODEL_NAME,
-                    reasoning_effort="low"  # Use minimal reasoning for simple evaluation
+                    reasoning_effort=AZURE_OPENAI_REASONING_EFFORT
                 )
                 logging.debug(f"Full eval response: {eval_response}")
                 finish_reason = eval_response.choices[0].finish_reason
@@ -1181,7 +1183,7 @@ def submit_response(user_response: UserResponse):
                         ],
                         max_completion_tokens=1000,
                         model=AZURE_OPENAI_MODEL_NAME,
-                        reasoning_effort="low"
+                        reasoning_effort=AZURE_OPENAI_REASONING_EFFORT
                     )
                     eval_content = retry_response.choices[0].message.content
                     if not eval_content:
@@ -1395,7 +1397,7 @@ def generate_next_question(session_id: str) -> dict:
             ],
             max_completion_tokens=2000,  # Increased for reasoning models
             model=AZURE_OPENAI_MODEL_NAME,
-            reasoning_effort="low"  # Use minimal reasoning for question generation
+            reasoning_effort=AZURE_OPENAI_REASONING_EFFORT
         )
 
         raw_content = response_gpt.choices[0].message.content
@@ -1563,7 +1565,7 @@ Return ONLY the JSON object, no markdown or commentary.
             max_completion_tokens=4000,
             top_p=1.0,
             model=AZURE_OPENAI_MODEL_NAME,
-            reasoning_effort="medium"
+            reasoning_effort=AZURE_OPENAI_REASONING_EFFORT
         )
 
         raw_content = final_response.choices[0].message.content
